@@ -1,0 +1,14 @@
+.venv
+.git
+.gitignore
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.db
+.env
+tests
+docs
+README.md
+alembic.ini
+docker-compose.yml
