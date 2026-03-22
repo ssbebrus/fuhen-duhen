@@ -10,5 +10,4 @@ __pycache__
 tests
 docs
 README.md
-alembic.ini
 docker-compose.yml
