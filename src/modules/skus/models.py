@@ -22,7 +22,7 @@ class SKU(Base, TimestampMixin):
     price: Mapped[int] = mapped_column(Integer)
     active_quantity: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[SKUStatus] = mapped_column(Enum(SKUStatus), default=SKUStatus.ACTIVE)
-    images: Mapped[list[str]] = mapped_column(JSONB, default=list)  # List of URLs
+    images: Mapped[list[dict]] = mapped_column(JSONB, default=list)  # List of {"url": "...", "ordering": 0}
     characteristics: Mapped[list[dict]] = mapped_column(JSONB, default=list)  # List of {"name": "...", "value": "..."}
     
     product_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("products.id"))

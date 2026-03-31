@@ -25,7 +25,11 @@ class SKUService:
     @staticmethod
     async def create(db: AsyncSession, sku_in: SKUCreate) -> SKU:
         """Создать новый SKU"""
-        new_sku = SKU(**sku_in.model_dump())
+        data = sku_in.model_dump()
+        if data.get("images"):
+            data["images"] = sorted(data["images"], key=lambda x: x["ordering"])
+            
+        new_sku = SKU(**data)
         db.add(new_sku)
         await db.commit()
         await db.refresh(new_sku)
@@ -37,6 +41,9 @@ class SKUService:
         update_data = sku_in.model_dump(exclude_unset=True)
         if not update_data:
             return await SKUService.get_by_id(db, sku_id)
+            
+        if "images" in update_data and update_data["images"]:
+            update_data["images"] = sorted(update_data["images"], key=lambda x: x["ordering"])
             
         query = update(SKU).where(SKU.id == sku_id).values(**update_data).returning(SKU)
         result = await db.execute(query)
