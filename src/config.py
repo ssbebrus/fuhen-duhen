@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     MINIO_URL: str
     MINIO_ROOT_USER: str
     MINIO_ROOT_PASSWORD: str
+    MINIO_BUCKET: str = Field(default="marketplace-images")
+    MINIO_ACCESS_KEY: str
+    MINIO_SECRET_KEY: str
+    MINIO_URL_EXTERNAL: str = Field(default="http://localhost:9000")
     
     model_config = SettingsConfigDict(
         env_file=".env", 

@@ -22,7 +22,7 @@ class Product(Base, TimestampMixin):
     title: Mapped[str] = mapped_column(String(255), index=True)
     description: Mapped[str] = mapped_column(Text, nullable=True)
     status: Mapped[ProductStatus] = mapped_column(Enum(ProductStatus), default=ProductStatus.ACTIVE)
-    images: Mapped[list[str]] = mapped_column(JSONB, default=list)  # List of URLs
+    images: Mapped[list[dict]] = mapped_column(JSONB, default=list)  # List of {"url": "...", "ordering": 0}
     characteristics: Mapped[list[dict]] = mapped_column(JSONB, default=list)  # List of {"name": "...", "value": "..."}
     
     category_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("categories.id"))

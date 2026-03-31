@@ -25,7 +25,11 @@ class ProductService:
     @staticmethod
     async def create(db: AsyncSession, product_in: ProductCreate) -> Product:
         """Создать новый продукт"""
-        new_product = Product(**product_in.model_dump())
+        data = product_in.model_dump()
+        if data.get("images"):
+            data["images"] = sorted(data["images"], key=lambda x: x["ordering"])
+            
+        new_product = Product(**data)
         db.add(new_product)
         await db.commit()
         await db.refresh(new_product)
@@ -37,6 +41,9 @@ class ProductService:
         update_data = product_in.model_dump(exclude_unset=True)
         if not update_data:
             return await ProductService.get_by_id(db, product_id)
+            
+        if "images" in update_data and update_data["images"]:
+            update_data["images"] = sorted(update_data["images"], key=lambda x: x["ordering"])
             
         query = update(Product).where(Product.id == product_id).values(**update_data).returning(Product)
         result = await db.execute(query)
