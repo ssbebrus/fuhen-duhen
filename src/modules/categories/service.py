@@ -53,13 +53,3 @@ class CategoryService:
         result = await db.execute(query)
         await db.commit()
         return result.scalar_one_or_none()
-
-    @staticmethod
-    async def delete(db: AsyncSession, category_id: UUID) -> bool:
-        """Удалить категорию (физическое удаление, так как для категорий soft delete не подтвержден)"""
-        category = await CategoryService.get_by_id(db, category_id)
-        if not category:
-            return False
-        await db.delete(category)
-        await db.commit()
-        return True

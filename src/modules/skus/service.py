@@ -3,19 +3,10 @@ from sqlalchemy import select, update
 from typing import List, Optional
 from uuid import UUID
 
-from .models import SKU, SKUStatus
+from .models import SKU
 from .schemas import SKUCreate, SKUUpdate
 
 class SKUService:
-    @staticmethod
-    async def get_all(db: AsyncSession, include_deleted: bool = False) -> List[SKU]:
-        """Получить список всех SKU"""
-        query = select(SKU)
-        if not include_deleted:
-            query = query.where(SKU.status != SKUStatus.DELETED)
-        result = await db.execute(query)
-        return list(result.scalars().all())
-
     @staticmethod
     async def get_by_id(db: AsyncSession, sku_id: UUID) -> Optional[SKU]:
         """Получить SKU по ID"""
@@ -49,14 +40,3 @@ class SKUService:
         result = await db.execute(query)
         await db.commit()
         return result.scalar_one_or_none()
-
-    @staticmethod
-    async def delete(db: AsyncSession, sku_id: UUID) -> bool:
-        """Мягкое удаление SKU (смена статуса)"""
-        sku = await SKUService.get_by_id(db, sku_id)
-        if not sku:
-            return False
-            
-        sku.status = SKUStatus.DELETED
-        await db.commit()
-        return True

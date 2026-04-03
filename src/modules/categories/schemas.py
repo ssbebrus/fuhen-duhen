@@ -11,12 +11,13 @@ class CategoryCreate(CategoryBase):
 
 class CategoryUpdate(BaseModel):
     name: Optional[str] = None
-    level: Optional[int] = None
+    is_active: Optional[bool] = None
 
 class CategoryResponse(CategoryBase):
     id: UUID
     level: int
     path: str
+    is_active: bool
     created_at: datetime
     updated_at: datetime
 

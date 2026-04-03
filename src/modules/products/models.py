@@ -11,9 +11,11 @@ if TYPE_CHECKING:
     from src.modules.skus.models import SKU
 
 class ProductStatus(str, enum.Enum):
-    ACTIVE = "active"
-    INACTIVE = "inactive"
-    DELETED = "deleted"
+    CREATED = "CREATED"
+    ON_MODERATION = "ON_MODERATION"
+    MODERATED = "MODERATED"
+    BLOCKED = "BLOCKED"
+    DELETED = "DELETED"
 
 class Product(Base, TimestampMixin):
     __tablename__ = "products"
@@ -21,7 +23,7 @@ class Product(Base, TimestampMixin):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     title: Mapped[str] = mapped_column(String(255), index=True)
     description: Mapped[str] = mapped_column(Text, nullable=True)
-    status: Mapped[ProductStatus] = mapped_column(Enum(ProductStatus), default=ProductStatus.ACTIVE)
+    status: Mapped[ProductStatus] = mapped_column(Enum(ProductStatus), default=ProductStatus.CREATED)
     images: Mapped[list[dict]] = mapped_column(JSONB, default=list)  # List of {"url": "...", "ordering": 0}
     characteristics: Mapped[list[dict]] = mapped_column(JSONB, default=list)  # List of {"name": "...", "value": "..."}
     
