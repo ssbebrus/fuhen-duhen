@@ -3,30 +3,38 @@ from typing import Optional, List
 from uuid import UUID
 from datetime import datetime
 from .models import ProductStatus
-from src.modules.common.schemas import ImageSchema
+from src.modules.common.schemas import Image, PaginatedResponse
+from src.modules.skus.schemas import SKUResponse
+
+class CategoryRef(BaseModel):
+    id: UUID
+    name: str
+    level: int
+    path: str
+
+    model_config = ConfigDict(from_attributes=True)
 
 class ProductBase(BaseModel):
     title: str
     description: Optional[str] = None
-    status: ProductStatus = ProductStatus.ACTIVE
-    images: List[ImageSchema] = []
+    status: ProductStatus = ProductStatus.CREATED
+    images: List[Image] = []
     characteristics: List[dict] = []
-    category_id: UUID
 
 class ProductCreate(ProductBase):
-    pass
+    category_id: UUID
 
-class ProductUpdate(BaseModel):
-    title: Optional[str] = None
-    description: Optional[str] = None
-    status: Optional[ProductStatus] = None
-    images: Optional[List[ImageSchema]] = None
-    characteristics: Optional[List[dict]] = None
-    category_id: Optional[UUID] = None
+class ProductUpdate(ProductCreate):
+    pass
 
 class ProductResponse(ProductBase):
     id: UUID
     created_at: datetime
     updated_at: datetime
+    category: CategoryRef
+    skus: List[SKUResponse]
 
     model_config = ConfigDict(from_attributes=True)
+
+class PaginatedProductResponse(PaginatedResponse[ProductResponse]):
+    pass

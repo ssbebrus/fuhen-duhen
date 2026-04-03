@@ -9,11 +9,6 @@ from src.db.base import Base, TimestampMixin
 if TYPE_CHECKING:
     from src.modules.products.models import Product
 
-class SKUStatus(str, enum.Enum):
-    ACTIVE = "active"
-    INACTIVE = "inactive"
-    DELETED = "deleted"
-
 class SKU(Base, TimestampMixin):
     __tablename__ = "skus"
 
@@ -21,7 +16,6 @@ class SKU(Base, TimestampMixin):
     name: Mapped[str] = mapped_column(String(255), index=True)
     price: Mapped[int] = mapped_column(Integer)
     active_quantity: Mapped[int] = mapped_column(Integer, default=0)
-    status: Mapped[SKUStatus] = mapped_column(Enum(SKUStatus), default=SKUStatus.ACTIVE)
     images: Mapped[list[dict]] = mapped_column(JSONB, default=list)  # List of {"url": "...", "ordering": 0}
     characteristics: Mapped[list[dict]] = mapped_column(JSONB, default=list)  # List of {"name": "...", "value": "..."}
     
@@ -30,4 +24,4 @@ class SKU(Base, TimestampMixin):
     product: Mapped["Product"] = relationship("Product", back_populates="skus")
 
     def __repr__(self) -> str:
-        return f"<SKU(id={self.id}, name={self.name}, status={self.status})>"
+        return f"<SKU(id={self.id}, name={self.name}, price={self.price})>"
