@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     MINIO_SECRET_KEY: str
     MINIO_URL_EXTERNAL: str = Field(default="http://localhost:9000")
     
+    JWT_SECRET: str
+    JWT_ALGORITHM: str = Field(default="HS256")
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=30)
+    
     model_config = SettingsConfigDict(
         env_file=".env", 
         env_file_encoding="utf-8", 

@@ -9,6 +9,7 @@ from src.db.base import Base, TimestampMixin
 if TYPE_CHECKING:
     from src.modules.categories.models import Category
     from src.modules.skus.models import SKU
+    from src.modules.auth.models import Seller
 
 class ProductStatus(str, enum.Enum):
     CREATED = "CREATED"
@@ -24,13 +25,17 @@ class Product(Base, TimestampMixin):
     title: Mapped[str] = mapped_column(String(255), index=True)
     description: Mapped[str] = mapped_column(Text, nullable=True)
     status: Mapped[ProductStatus] = mapped_column(Enum(ProductStatus), default=ProductStatus.CREATED)
+    deleted: Mapped[bool] = mapped_column(default=False, server_default="false")
+    blocked: Mapped[bool] = mapped_column(default=False, server_default="false")
     images: Mapped[list[dict]] = mapped_column(JSONB, default=list)  # List of {"url": "...", "ordering": 0}
     characteristics: Mapped[list[dict]] = mapped_column(JSONB, default=list)  # List of {"name": "...", "value": "..."}
     
     category_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("categories.id"))
+    seller_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("sellers.id"), index=True, nullable=False)
 
     category: Mapped["Category"] = relationship("Category", back_populates="products")
     skus: Mapped[list["SKU"]] = relationship("SKU", back_populates="product")
+    seller: Mapped["Seller"] = relationship("Seller")
 
     def __repr__(self) -> str:
         return f"<Product(id={self.id}, title={self.title}, status={self.status})>"

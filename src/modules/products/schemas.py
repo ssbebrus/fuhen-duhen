@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional, List
 from uuid import UUID
 from datetime import datetime
@@ -14,25 +14,37 @@ class CategoryRef(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+class CharacteristicValue(BaseModel):
+    name: str
+    value: str
+
 class ProductBase(BaseModel):
-    title: str
-    description: Optional[str] = None
-    status: ProductStatus = ProductStatus.CREATED
-    images: List[Image] = []
-    characteristics: List[dict] = []
+    title: str = Field(..., min_length=1, max_length=255)
+    description: str = Field(..., min_length=1, max_length=5000)
+    category_id: UUID
+    images: List[Image] = Field(..., min_length=1)
+    characteristics: List[CharacteristicValue] = []
 
 class ProductCreate(ProductBase):
-    category_id: UUID
-
-class ProductUpdate(ProductCreate):
     pass
+
+class ProductUpdate(BaseModel):
+    title: Optional[str] = Field(None, min_length=1, max_length=255)
+    description: Optional[str] = Field(None, min_length=1, max_length=5000)
+    category_id: Optional[UUID] = None
+    images: Optional[List[Image]] = None
+    characteristics: Optional[List[CharacteristicValue]] = None
 
 class ProductResponse(ProductBase):
     id: UUID
+    status: ProductStatus
+    seller_id: UUID
+    deleted: bool
+    blocked: bool
     created_at: datetime
     updated_at: datetime
     category: CategoryRef
-    skus: List[SKUResponse]
+    skus: List[SKUResponse] = []
 
     model_config = ConfigDict(from_attributes=True)
 

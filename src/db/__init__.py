@@ -4,5 +4,6 @@ from src.db.base import Base
 from src.modules.products.models import Product
 from src.modules.categories.models import Category
 from src.modules.skus.models import SKU
+from src.modules.auth.models import Seller
 
 # Иначе alembic --autogenerate не сможет найти таблицы
