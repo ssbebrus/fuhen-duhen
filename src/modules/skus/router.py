@@ -37,8 +37,7 @@ async def create_sku(sku_in: SKUCreate, background_tasks: BackgroundTasks, db: A
         raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": "price must be a positive integer (kopecks)"})
     
     # Validation from openapi: name is required by schema, Pydantic handles it.
-    # Images and characteristics are optional with default []
-        
+    # Images and characteristics are optional with default []    
     try:
         new_sku, status_changed, product = await SKUService.create(db, sku_in)
     except ValueError as e:
