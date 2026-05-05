@@ -1,3 +1,4 @@
+from src.modules.products.models import ProductStatus
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, func
 from sqlalchemy.orm import selectinload
@@ -75,16 +76,30 @@ class ProductService:
         return new_product
 
     @staticmethod
-    async def update(db: AsyncSession, product_id: UUID, product_in: ProductUpdate) -> Optional[Product]:
+    async def update(db: AsyncSession, product_id: UUID, product_in: ProductUpdate, seller_id: UUID) -> tuple[Optional[Product], bool]:
         """Обновить продукт"""
-        update_data = product_in.model_dump(exclude_unset=True)
-        if not update_data:
-            return await ProductService.get_by_id(db, product_id)
+        product = await ProductService.get_by_id(db, product_id)
+        if not product:
+            raise ValueError("Product not found")
             
+        if product.seller_id != seller_id:
+            raise ValueError("Product does not belong to the authenticated seller")
+            
+        if product.status == ProductStatus.HARD_BLOCKED:
+            raise ValueError("Cannot edit hard-blocked product")
+            
+        update_data = product_in.model_dump(exclude_unset=True)
         if "images" in update_data and update_data["images"]:
             update_data["images"] = sorted(update_data["images"], key=lambda x: x["ordering"])
             
-        query = update(Product).where(Product.id == product_id).values(**update_data)
-        await db.execute(query)
-        await db.commit()
-        return await ProductService.get_by_id(db, product_id)
+        status_changed = False
+        if product.status in [ProductStatus.MODERATED, ProductStatus.BLOCKED]:
+            update_data["status"] = ProductStatus.ON_MODERATION
+            status_changed = True
+            
+        if update_data:
+            query = update(Product).where(Product.id == product_id).values(**update_data)
+            await db.execute(query)
+            await db.commit()
+            
+        return await ProductService.get_by_id(db, product_id), status_changed

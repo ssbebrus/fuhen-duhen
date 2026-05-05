@@ -26,6 +26,27 @@ async def setup_data(test_db: AsyncSession):
         f"VALUES ('{category_id}', 'TestCat', 0, '{category_id}', true, now(), now())"
     ))
     
+    # Create seller 2
+    seller_id_2 = uuid.uuid4()
+    await test_db.execute(text(
+        f"INSERT INTO sellers (id, email, hashed_password, first_name, last_name, company_name, created_at, updated_at) "
+        f"VALUES ('{seller_id_2}', 'test2@test.com', 'hash', 'T', 'T', 'C', now(), now())"
+    ))
+
+    # Create products for editing tests
+    product_id_mod = uuid.uuid4()
+    product_id_blk = uuid.uuid4()
+    product_id_hblk = uuid.uuid4()
+    product_id_other = uuid.uuid4()
+    
+    await test_db.execute(text(
+        f"INSERT INTO products (id, title, status, category_id, seller_id, images, characteristics, created_at, updated_at) "
+        f"VALUES ('{product_id_mod}', 'P Mod', 'MODERATED', '{category_id}', '{seller_id}', '[]', '[]', now(), now()), "
+        f"('{product_id_blk}', 'P Blk', 'BLOCKED', '{category_id}', '{seller_id}', '[]', '[]', now(), now()), "
+        f"('{product_id_hblk}', 'P Hblk', 'HARD_BLOCKED', '{category_id}', '{seller_id}', '[]', '[]', now(), now()), "
+        f"('{product_id_other}', 'P Oth', 'CREATED', '{category_id}', '{seller_id_2}', '[]', '[]', now(), now())"
+    ))
+    
     # Мы НЕ делаем commit() здесь, так как conftest.py откатит транзакцию в конце теста.
     # Но если мы хотим, чтобы данные были видны в других сессиях (хотя у нас одна), можно сделать flush.
     await test_db.flush()
@@ -33,7 +54,15 @@ async def setup_data(test_db: AsyncSession):
     # Generate token
     token = jwt.encode({"sub": str(seller_id)}, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
     
-    yield {"seller_id": seller_id, "category_id": category_id, "token": token}
+    yield {
+        "seller_id": seller_id, 
+        "category_id": category_id, 
+        "token": token,
+        "product_id_mod": product_id_mod,
+        "product_id_blk": product_id_blk,
+        "product_id_hblk": product_id_hblk,
+        "product_id_other": product_id_other
+    }
     
     # Ручная очистка больше не нужна, так как вся транзакция откатывается.
 
@@ -108,3 +137,76 @@ async def test_invalid_category_id_returns_400(client: AsyncClient, setup_data: 
     response = await client.post("/api/v1/products/", json=payload, headers=headers)
     assert response.status_code == 400
     assert response.json()["detail"]["code"] == "INVALID_REQUEST"
+
+from unittest.mock import patch
+
+@pytest.mark.asyncio
+@patch("src.modules.products.router.send_moderation_event")
+async def test_edit_moderated_product_returns_to_on_moderation(mock_send, client: AsyncClient, setup_data: dict, test_db: AsyncSession):
+    headers = {"Authorization": f"Bearer {setup_data['token']}"}
+    payload = {
+        "title": "Updated Mod",
+        "description": "Phone",
+        "category_id": str(setup_data["category_id"]),
+        "images": [{"url": "http://img", "ordering": 0}],
+        "characteristics": []
+    }
+    product_id = setup_data["product_id_mod"]
+    response = await client.put(f"/api/v1/products/{product_id}", json=payload, headers=headers)
+    assert response.status_code == 200
+    
+    # Check DB status
+    res = await test_db.execute(text(f"SELECT status FROM products WHERE id = '{product_id}'"))
+    db_status = res.scalar()
+    assert db_status == "ON_MODERATION"
+    mock_send.assert_called_once_with(product_id, setup_data["seller_id"], "EDITED")
+
+@pytest.mark.asyncio
+@patch("src.modules.products.router.send_moderation_event")
+async def test_edit_blocked_product_returns_to_on_moderation(mock_send, client: AsyncClient, setup_data: dict, test_db: AsyncSession):
+    headers = {"Authorization": f"Bearer {setup_data['token']}"}
+    payload = {
+        "title": "Updated Blk",
+        "description": "Phone",
+        "category_id": str(setup_data["category_id"]),
+        "images": [{"url": "http://img", "ordering": 0}],
+        "characteristics": []
+    }
+    product_id = setup_data["product_id_blk"]
+    response = await client.put(f"/api/v1/products/{product_id}", json=payload, headers=headers)
+    assert response.status_code == 200
+    
+    res = await test_db.execute(text(f"SELECT status FROM products WHERE id = '{product_id}'"))
+    db_status = res.scalar()
+    assert db_status == "ON_MODERATION"
+    mock_send.assert_called_once_with(product_id, setup_data["seller_id"], "EDITED")
+
+@pytest.mark.asyncio
+async def test_edit_hard_blocked_returns_403(client: AsyncClient, setup_data: dict):
+    headers = {"Authorization": f"Bearer {setup_data['token']}"}
+    payload = {
+        "title": "Updated Hblk",
+        "description": "Phone",
+        "category_id": str(setup_data["category_id"]),
+        "images": [{"url": "http://img", "ordering": 0}],
+        "characteristics": []
+    }
+    product_id = setup_data["product_id_hblk"]
+    response = await client.put(f"/api/v1/products/{product_id}", json=payload, headers=headers)
+    assert response.status_code == 403
+    assert response.json()["detail"]["code"] == "FORBIDDEN"
+
+@pytest.mark.asyncio
+async def test_edit_others_product_returns_403(client: AsyncClient, setup_data: dict):
+    headers = {"Authorization": f"Bearer {setup_data['token']}"}
+    payload = {
+        "title": "Updated Other",
+        "description": "Phone",
+        "category_id": str(setup_data["category_id"]),
+        "images": [{"url": "http://img", "ordering": 0}],
+        "characteristics": []
+    }
+    product_id = setup_data["product_id_other"]
+    response = await client.put(f"/api/v1/products/{product_id}", json=payload, headers=headers)
+    assert response.status_code == 403
+    assert response.json()["detail"]["code"] == "NOT_OWNER"

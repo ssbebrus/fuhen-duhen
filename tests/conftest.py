@@ -63,10 +63,15 @@ async def test_db(test_engine) -> AsyncGenerator[AsyncSession, None]:
     yield session
 
     # Откатываем все изменения к началу теста
-    await nested.rollback()
-    await trans.rollback()
-    await session.close()
-    await connection.close()
+    try:
+        if connection.in_nested_transaction():
+            await nested.rollback()
+        await trans.rollback()
+    except Exception:
+        pass
+    finally:
+        await session.close()
+        await connection.close()
     app.dependency_overrides.clear()
 
 @pytest.fixture

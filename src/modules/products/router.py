@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 from uuid import UUID
@@ -8,6 +8,7 @@ from .schemas import ProductCreate, ProductUpdate, ProductResponse, PaginatedPro
 from .service import ProductService
 from src.modules.auth.dependencies import get_current_seller
 from src.modules.auth.models import Seller
+from src.modules.common.events import send_moderation_event
 
 router = APIRouter(prefix="/products", tags=["Products"])
 
@@ -41,11 +42,23 @@ async def create_product(
 async def update_product(
     product_id: UUID, 
     product_in: ProductUpdate, 
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     seller: Seller = Depends(get_current_seller)
 ):
     """Изменить товар"""
-    product = await ProductService.update(db, product_id, product_in)
-    if not product:
-        raise HTTPException(status_code=404, detail="Товар не найден")
+    try:
+        product, status_changed = await ProductService.update(db, product_id, product_in, seller.id)
+    except ValueError as e:
+        if str(e) == "Product not found":
+            raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Product not found"})
+        elif str(e) == "Product does not belong to the authenticated seller":
+            raise HTTPException(status_code=403, detail={"code": "NOT_OWNER", "message": "Product does not belong to the authenticated seller"})
+        elif str(e) == "Cannot edit hard-blocked product":
+            raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "Cannot edit hard-blocked product"})
+        raise
+        
+    if status_changed:
+        background_tasks.add_task(send_moderation_event, product.id, product.seller_id, "EDITED")
+        
     return product

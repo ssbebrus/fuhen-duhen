@@ -46,7 +46,7 @@ class SKUService:
 
         status_changed = False
         if is_first_sku and product.status == ProductStatus.CREATED:
-            product.status = ProductStatus.ON_MODERATION
+            await db.execute(update(Product).where(Product.id == product.id).values(status=ProductStatus.ON_MODERATION))
             status_changed = True
 
         await db.commit()
@@ -54,13 +54,34 @@ class SKUService:
         return new_sku, status_changed, product
 
     @staticmethod
-    async def update(db: AsyncSession, sku_id: UUID, sku_in: SKUUpdate) -> Optional[SKU]:
+    async def update(db: AsyncSession, sku_id: UUID, sku_in: SKUUpdate, seller_id: UUID) -> tuple[Optional[SKU], bool]:
         """Обновить SKU"""
-        update_data = sku_in.model_dump(exclude_unset=True)
-        if not update_data:
-            return await SKUService.get_by_id(db, sku_id)
+        sku = await SKUService.get_by_id(db, sku_id)
+        if not sku:
+            raise ValueError("SKU not found")
             
-        query = update(SKU).where(SKU.id == sku_id).values(**update_data).returning(SKU)
-        result = await db.execute(query)
+        product = await db.scalar(select(Product).where(Product.id == sku.product_id))
+        if not product:
+            raise ValueError("Product not found")
+            
+        if product.seller_id != seller_id:
+            raise ValueError("Product does not belong to the authenticated seller")
+            
+        if product.status == ProductStatus.HARD_BLOCKED:
+            raise ValueError("Cannot edit SKU of a hard-blocked product")
+            
+        update_data = sku_in.model_dump(exclude_unset=True)
+        
+        status_changed = False
+        if product.status in [ProductStatus.MODERATED, ProductStatus.BLOCKED]:
+            await db.execute(update(Product).where(Product.id == product.id).values(status=ProductStatus.ON_MODERATION))
+            status_changed = True
+            
+        if update_data:
+            query = update(SKU).where(SKU.id == sku_id).values(**update_data).returning(SKU)
+            result = await db.execute(query)
+            await db.commit()
+            return result.scalar_one_or_none(), status_changed
+            
         await db.commit()
-        return result.scalar_one_or_none()
+        return sku, status_changed
