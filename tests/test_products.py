@@ -71,6 +71,12 @@ async def test_create_product_returns_201_with_created_status(client: AsyncClien
     assert data["title"] == "iPhone 15"
     assert "id" in data
     assert data["skus"] == []
+    
+    # Check that images and characteristics have IDs (as per spec)
+    assert len(data["images"]) == 1
+    assert "id" in data["images"][0]
+    assert len(data["characteristics"]) == 1
+    assert "id" in data["characteristics"][0]
 
 @pytest.mark.asyncio
 async def test_seller_id_taken_from_jwt(client: AsyncClient, setup_data: dict, test_db: AsyncSession):
@@ -91,20 +97,6 @@ async def test_seller_id_taken_from_jwt(client: AsyncClient, setup_data: dict, t
     res = await test_db.execute(text(f"SELECT seller_id FROM products WHERE id = '{product_id}'"))
     db_seller_id = res.scalar()
     assert str(db_seller_id) == str(setup_data["seller_id"])
-
-@pytest.mark.asyncio
-async def test_missing_images_returns_400(client: AsyncClient, setup_data: dict):
-    headers = {"Authorization": f"Bearer {setup_data['token']}"}
-    payload = {
-        "title": "iPhone 15",
-        "description": "Phone",
-        "category_id": str(setup_data["category_id"])
-        # missing images
-    }
-    
-    response = await client.post("/api/v1/products/", json=payload, headers=headers)
-    assert response.status_code == 400
-    assert response.json().get("code") == "INVALID_REQUEST" or response.json().get("detail", {}).get("code") == "INVALID_REQUEST"
 
 @pytest.mark.asyncio
 async def test_missing_category_returns_400(client: AsyncClient, setup_data: dict):

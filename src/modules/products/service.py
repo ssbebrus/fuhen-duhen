@@ -59,12 +59,12 @@ class ProductService:
         data = product_in.model_dump()
         if data.get("images"):
             for img in data["images"]:
-                img["id"] = uuid.uuid4()
+                img["id"] = str(uuid.uuid4())
             data["images"] = sorted(data["images"], key=lambda x: x["ordering"])
             
         if data.get("characteristics"):
             for char in data["characteristics"]:
-                char["id"] = uuid.uuid4()
+                char["id"] = str(uuid.uuid4())
             
         data["seller_id"] = seller_id
             
