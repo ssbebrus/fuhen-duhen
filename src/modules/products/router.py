@@ -6,6 +6,8 @@ from uuid import UUID
 from src.db.database import get_db
 from .schemas import ProductCreate, ProductUpdate, ProductResponse, PaginatedProductResponse
 from .service import ProductService
+from src.modules.auth.dependencies import get_current_seller
+from src.modules.auth.models import Seller
 
 router = APIRouter(prefix="/products", tags=["Products"])
 
@@ -27,12 +29,21 @@ async def get_product(product_id: UUID, db: AsyncSession = Depends(get_db)):
     return product
 
 @router.post("/", response_model=ProductResponse, status_code=status.HTTP_201_CREATED, summary="Создать товар")
-async def create_product(product_in: ProductCreate, db: AsyncSession = Depends(get_db)):
+async def create_product(
+    product_in: ProductCreate, 
+    db: AsyncSession = Depends(get_db),
+    seller: Seller = Depends(get_current_seller)
+):
     """Создать новый товар"""
-    return await ProductService.create(db, product_in)
+    return await ProductService.create(db, product_in, seller_id=seller.id)
 
 @router.put("/{product_id}", response_model=ProductResponse, summary="Изменить товар")
-async def update_product(product_id: UUID, product_in: ProductUpdate, db: AsyncSession = Depends(get_db)):
+async def update_product(
+    product_id: UUID, 
+    product_in: ProductUpdate, 
+    db: AsyncSession = Depends(get_db),
+    seller: Seller = Depends(get_current_seller)
+):
     """Изменить товар"""
     product = await ProductService.update(db, product_id, product_in)
     if not product:

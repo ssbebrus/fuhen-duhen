@@ -1,6 +1,6 @@
 import uuid
 import enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import String, Integer, ForeignKey, Enum
 from sqlalchemy.dialects.postgresql import UUID, JSONB
@@ -15,7 +15,8 @@ class SKU(Base, TimestampMixin):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255), index=True)
     price: Mapped[int] = mapped_column(Integer)
-    active_quantity: Mapped[int] = mapped_column(Integer, default=0)
+    stock_quantity: Mapped[int] = mapped_column(Integer, default=0)
+    article: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     images: Mapped[list[dict]] = mapped_column(JSONB, default=list)  # List of {"url": "...", "ordering": 0}
     characteristics: Mapped[list[dict]] = mapped_column(JSONB, default=list)  # List of {"name": "...", "value": "..."}
     

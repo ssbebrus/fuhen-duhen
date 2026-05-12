@@ -7,7 +7,6 @@ __pycache__
 *.pyd
 .db
 .env
-tests
 docs
 README.md
 docker-compose.yml

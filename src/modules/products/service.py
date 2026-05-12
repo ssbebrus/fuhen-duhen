@@ -3,9 +3,12 @@ from sqlalchemy import select, update, func
 from sqlalchemy.orm import selectinload
 from typing import List, Optional
 from uuid import UUID
+import uuid
+from fastapi import HTTPException, status
 
 from .models import Product
 from .schemas import ProductCreate, ProductUpdate
+from src.modules.categories.service import CategoryService
 
 class ProductService:
     @staticmethod
@@ -44,16 +47,31 @@ class ProductService:
         return result.scalar_one_or_none()
 
     @staticmethod
-    async def create(db: AsyncSession, product_in: ProductCreate) -> Product:
+    async def create(db: AsyncSession, product_in: ProductCreate, seller_id: UUID) -> Product:
         """Создать новый продукт"""
+        category = await CategoryService.get_by_id(db, product_in.category_id)
+        if not category:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"code": "INVALID_REQUEST", "message": "Category not found"}
+            )
+
         data = product_in.model_dump()
         if data.get("images"):
+            for img in data["images"]:
+                img["id"] = str(uuid.uuid4())
             data["images"] = sorted(data["images"], key=lambda x: x["ordering"])
+            
+        if data.get("characteristics"):
+            for char in data["characteristics"]:
+                char["id"] = str(uuid.uuid4())
+            
+        data["seller_id"] = seller_id
             
         new_product = Product(**data)
         db.add(new_product)
         await db.commit()
-        await db.refresh(new_product, attribute_names=["category"])
+        await db.refresh(new_product, attribute_names=["category", "skus"])
         return new_product
 
     @staticmethod

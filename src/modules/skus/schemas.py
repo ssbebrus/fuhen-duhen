@@ -1,16 +1,14 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional, List
 from uuid import UUID
 from datetime import datetime
-from src.modules.common.schemas import Image
 
 class SKUBase(BaseModel):
+    product_id: UUID
     name: str
     price: int
-    active_quantity: int = 0
-    images: List[Image] = []
-    characteristics: List[dict] = []
-    product_id: UUID
+    stock_quantity: int = 0
+    article: Optional[str] = None
 
 class SKUCreate(SKUBase):
     pass
@@ -18,13 +16,22 @@ class SKUCreate(SKUBase):
 class SKUUpdate(BaseModel):
     name: str
     price: int
-    active_quantity: int
-    images: List[Image] = []
-    characteristics: List[dict] = []
-    product_id: UUID
+    stock_quantity: int
+    article: Optional[str] = None
+
+class SKUShortResponse(BaseModel):
+    id: UUID
+    name: str
+    price: int
+    stock_quantity: int
+    article: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
 
 class SKUResponse(SKUBase):
     id: UUID
+    images: List[dict] = []  # To be refined if needed
+    characteristics: List[dict] = []
     created_at: datetime
     updated_at: datetime
 
