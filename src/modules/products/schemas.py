@@ -44,9 +44,9 @@ class ProductImageResponse(ProductImageCreate):
 
 class ProductBase(BaseModel):
     title: str = Field(..., min_length=1, max_length=255, title="Title")
-    description: Optional[str] = Field(None, title="Description")
+    description: str = Field(..., min_length=1, max_length=5000, title="Description")
     category_id: UUID = Field(..., title="Category Id")
-    images: List[ProductImageCreate] = Field(default=[], title="Images")
+    images: List[ProductImageCreate] = Field(..., min_length=1, title="Images")
     characteristics: List[ProductCharacteristicCreate] = Field(default=[], title="Characteristics")
 
 class ProductCreate(ProductBase):
@@ -61,13 +61,15 @@ class ProductUpdate(BaseModel):
 class ProductResponse(BaseModel):
     id: UUID = Field(..., title="Id")
     seller_id: UUID = Field(..., title="Seller Id")
-    category_id: UUID = Field(..., title="Category Id")
     title: str = Field(..., title="Title")
-    description: Optional[str] = Field(None, title="Description")
+    description: str = Field(..., title="Description")
     status: ProductStatus
+    deleted: bool = Field(..., title="Deleted")
+    blocked: bool = Field(..., title="Blocked")
     images: List[ProductImageResponse] = Field(..., title="Images")
     characteristics: List[ProductCharacteristicResponse] = Field(..., title="Characteristics")
     skus: List[SKUShortResponse] = Field(..., title="Skus")
+    category: CategoryRef = Field(..., title="Category")
     created_at: datetime = Field(..., title="Created At")
     updated_at: datetime = Field(..., title="Updated At")
 

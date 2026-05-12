@@ -125,6 +125,32 @@ async def test_missing_category_returns_400(client: AsyncClient, setup_data: dic
     assert response.status_code == 400
 
 @pytest.mark.asyncio
+async def test_missing_description_returns_400(client: AsyncClient, setup_data: dict):
+    headers = {"Authorization": f"Bearer {setup_data['token']}"}
+    payload = {
+        "title": "iPhone 15",
+        "category_id": str(setup_data["category_id"]),
+        "images": [{"url": "http://img", "ordering": 0}]
+        # missing description
+    }
+    
+    response = await client.post("/api/v1/products/", json=payload, headers=headers)
+    assert response.status_code == 400
+
+@pytest.mark.asyncio
+async def test_missing_images_returns_400(client: AsyncClient, setup_data: dict):
+    headers = {"Authorization": f"Bearer {setup_data['token']}"}
+    payload = {
+        "title": "iPhone 15",
+        "description": "Phone",
+        "category_id": str(setup_data["category_id"])
+        # missing images
+    }
+    
+    response = await client.post("/api/v1/products/", json=payload, headers=headers)
+    assert response.status_code == 400
+
+@pytest.mark.asyncio
 async def test_invalid_category_id_returns_400(client: AsyncClient, setup_data: dict):
     headers = {"Authorization": f"Bearer {setup_data['token']}"}
     payload = {
