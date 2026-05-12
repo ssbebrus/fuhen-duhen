@@ -3,6 +3,7 @@ from sqlalchemy import select, update, func
 from sqlalchemy.orm import selectinload
 from typing import List, Optional
 from uuid import UUID
+import uuid
 from fastapi import HTTPException, status
 
 from .models import Product
@@ -57,7 +58,13 @@ class ProductService:
 
         data = product_in.model_dump()
         if data.get("images"):
+            for img in data["images"]:
+                img["id"] = uuid.uuid4()
             data["images"] = sorted(data["images"], key=lambda x: x["ordering"])
+            
+        if data.get("characteristics"):
+            for char in data["characteristics"]:
+                char["id"] = uuid.uuid4()
             
         data["seller_id"] = seller_id
             

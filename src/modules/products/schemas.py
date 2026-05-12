@@ -3,8 +3,8 @@ from typing import Optional, List
 from uuid import UUID
 from datetime import datetime
 from .models import ProductStatus
-from src.modules.common.schemas import Image, PaginatedResponse
-from src.modules.skus.schemas import SKUResponse
+from src.modules.common.schemas import PaginatedResponse
+from src.modules.skus.schemas import SKUShortResponse
 
 class CategoryRef(BaseModel):
     id: UUID
@@ -14,37 +14,56 @@ class CategoryRef(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-class CharacteristicValue(BaseModel):
-    name: str
-    value: str
+class ProductCharacteristicBase(BaseModel):
+    name: str = Field(..., title="Name")
+    value: str = Field(..., title="Value")
+
+class ProductCharacteristicCreate(ProductCharacteristicBase):
+    pass
+
+class ProductCharacteristicResponse(ProductCharacteristicBase):
+    id: UUID = Field(..., title="Id")
+
+    model_config = ConfigDict(from_attributes=True)
+
+class ProductImageCreate(BaseModel):
+    url: str = Field(..., title="Url")
+    ordering: int = Field(default=0, title="Ordering")
+
+class ProductImageResponse(ProductImageCreate):
+    id: UUID = Field(..., title="Id")
+
+    model_config = ConfigDict(from_attributes=True)
 
 class ProductBase(BaseModel):
-    title: str = Field(..., min_length=1, max_length=255)
-    description: str = Field(..., min_length=1, max_length=5000)
-    category_id: UUID
-    images: List[Image] = Field(..., min_length=1)
-    characteristics: List[CharacteristicValue] = []
+    title: str = Field(..., min_length=1, max_length=255, title="Title")
+    description: Optional[str] = Field(None, title="Description")
+    category_id: UUID = Field(..., title="Category Id")
+    images: List[ProductImageCreate] = Field(default=[], title="Images")
+    characteristics: List[ProductCharacteristicCreate] = Field(default=[], title="Characteristics")
 
 class ProductCreate(ProductBase):
     pass
 
 class ProductUpdate(BaseModel):
     title: Optional[str] = Field(None, min_length=1, max_length=255)
-    description: Optional[str] = Field(None, min_length=1, max_length=5000)
+    description: Optional[str] = Field(None)
     category_id: Optional[UUID] = None
-    images: Optional[List[Image]] = None
-    characteristics: Optional[List[CharacteristicValue]] = None
+    images: Optional[List[ProductImageCreate]] = None
+    characteristics: Optional[List[ProductCharacteristicCreate]] = None
 
-class ProductResponse(ProductBase):
-    id: UUID
+class ProductResponse(BaseModel):
+    id: UUID = Field(..., title="Id")
+    seller_id: UUID = Field(..., title="Seller Id")
+    category_id: UUID = Field(..., title="Category Id")
+    title: str = Field(..., title="Title")
+    description: Optional[str] = Field(None, title="Description")
     status: ProductStatus
-    seller_id: UUID
-    deleted: bool
-    blocked: bool
-    created_at: datetime
-    updated_at: datetime
-    category: CategoryRef
-    skus: List[SKUResponse] = []
+    images: List[ProductImageResponse] = Field(..., title="Images")
+    characteristics: List[ProductCharacteristicResponse] = Field(..., title="Characteristics")
+    skus: List[SKUShortResponse] = Field(..., title="Skus")
+    created_at: datetime = Field(..., title="Created At")
+    updated_at: datetime = Field(..., title="Updated At")
 
     model_config = ConfigDict(from_attributes=True)
 
