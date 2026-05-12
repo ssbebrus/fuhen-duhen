@@ -30,6 +30,13 @@ class ProductImageCreate(BaseModel):
     url: str = Field(..., title="Url")
     ordering: int = Field(default=0, title="Ordering")
 
+class ProductImageCreateRequest(ProductImageCreate):
+    pass
+
+class ProductImageUpdateRequest(BaseModel):
+    url: Optional[str] = Field(None, title="Url")
+    ordering: Optional[int] = Field(None, title="Ordering")
+
 class ProductImageResponse(ProductImageCreate):
     id: UUID = Field(..., title="Id")
 
@@ -46,11 +53,10 @@ class ProductCreate(ProductBase):
     pass
 
 class ProductUpdate(BaseModel):
-    title: Optional[str] = Field(None, min_length=1, max_length=255)
-    description: Optional[str] = Field(None)
-    category_id: Optional[UUID] = None
-    images: Optional[List[ProductImageCreate]] = None
-    characteristics: Optional[List[ProductCharacteristicCreate]] = None
+    title: Optional[str] = Field(None, min_length=1, max_length=255, title="Title")
+    description: Optional[str] = Field(None, title="Description")
+    category_id: Optional[UUID] = Field(None, title="Category Id")
+    status: Optional[ProductStatus] = Field(None, title="Status")
 
 class ProductResponse(BaseModel):
     id: UUID = Field(..., title="Id")

@@ -147,12 +147,10 @@ async def test_edit_moderated_product_returns_to_on_moderation(mock_send, client
     payload = {
         "title": "Updated Mod",
         "description": "Phone",
-        "category_id": str(setup_data["category_id"]),
-        "images": [{"url": "http://img", "ordering": 0}],
-        "characteristics": []
+        "category_id": str(setup_data["category_id"])
     }
     product_id = setup_data["product_id_mod"]
-    response = await client.put(f"/api/v1/products/{product_id}", json=payload, headers=headers)
+    response = await client.patch(f"/api/v1/products/{product_id}", json=payload, headers=headers)
     assert response.status_code == 200
     
     # Check DB status
@@ -168,12 +166,10 @@ async def test_edit_blocked_product_returns_to_on_moderation(mock_send, client: 
     payload = {
         "title": "Updated Blk",
         "description": "Phone",
-        "category_id": str(setup_data["category_id"]),
-        "images": [{"url": "http://img", "ordering": 0}],
-        "characteristics": []
+        "category_id": str(setup_data["category_id"])
     }
     product_id = setup_data["product_id_blk"]
-    response = await client.put(f"/api/v1/products/{product_id}", json=payload, headers=headers)
+    response = await client.patch(f"/api/v1/products/{product_id}", json=payload, headers=headers)
     assert response.status_code == 200
     
     res = await test_db.execute(text(f"SELECT status FROM products WHERE id = '{product_id}'"))
@@ -187,12 +183,10 @@ async def test_edit_hard_blocked_returns_403(client: AsyncClient, setup_data: di
     payload = {
         "title": "Updated Hblk",
         "description": "Phone",
-        "category_id": str(setup_data["category_id"]),
-        "images": [{"url": "http://img", "ordering": 0}],
-        "characteristics": []
+        "category_id": str(setup_data["category_id"])
     }
     product_id = setup_data["product_id_hblk"]
-    response = await client.put(f"/api/v1/products/{product_id}", json=payload, headers=headers)
+    response = await client.patch(f"/api/v1/products/{product_id}", json=payload, headers=headers)
     assert response.status_code == 403
     assert response.json()["detail"]["code"] == "FORBIDDEN"
 
@@ -202,11 +196,66 @@ async def test_edit_others_product_returns_403(client: AsyncClient, setup_data: 
     payload = {
         "title": "Updated Other",
         "description": "Phone",
-        "category_id": str(setup_data["category_id"]),
-        "images": [{"url": "http://img", "ordering": 0}],
-        "characteristics": []
+        "category_id": str(setup_data["category_id"])
     }
     product_id = setup_data["product_id_other"]
-    response = await client.put(f"/api/v1/products/{product_id}", json=payload, headers=headers)
+    response = await client.patch(f"/api/v1/products/{product_id}", json=payload, headers=headers)
     assert response.status_code == 403
     assert response.json()["detail"]["code"] == "NOT_OWNER"
+
+@pytest.mark.asyncio
+@patch("src.modules.products.router.send_moderation_event")
+async def test_add_product_image(mock_send, client: AsyncClient, setup_data: dict, test_db: AsyncSession):
+    headers = {"Authorization": f"Bearer {setup_data['token']}"}
+    product_id = setup_data["product_id_mod"] # Status is MODERATED in setup
+    payload = {"url": "http://new-img.jpg", "ordering": 10}
+    
+    response = await client.post(f"/api/v1/products/{product_id}/images", json=payload, headers=headers)
+    assert response.status_code == 201
+    data = response.json()
+    assert data["url"] == "http://new-img.jpg"
+    assert "id" in data
+    
+    # Check status changed
+    res = await test_db.execute(text(f"SELECT status, images FROM products WHERE id = '{product_id}'"))
+    row = res.fetchone()
+    assert row[0] == "ON_MODERATION"
+    assert any(img["url"] == "http://new-img.jpg" for img in row[1])
+    mock_send.assert_called_once()
+
+@pytest.mark.asyncio
+@patch("src.modules.products.router.send_moderation_event")
+async def test_update_product_image(mock_send, client: AsyncClient, setup_data: dict, test_db: AsyncSession):
+    headers = {"Authorization": f"Bearer {setup_data['token']}"}
+    product_id = setup_data["product_id_mod"]
+    
+    # Add an image first
+    img_id = str(uuid.uuid4())
+    await test_db.execute(text(f"UPDATE products SET images = '[{{\"id\": \"{img_id}\", \"url\": \"http://old.jpg\", \"ordering\": 0}}]' WHERE id = '{product_id}'"))
+    await test_db.flush()
+    
+    payload = {"url": "http://updated.jpg"}
+    response = await client.patch(f"/api/v1/products/images/{img_id}", json=payload, headers=headers)
+    assert response.status_code == 200
+    assert response.json()["url"] == "http://updated.jpg"
+    
+    res = await test_db.execute(text(f"SELECT images FROM products WHERE id = '{product_id}'"))
+    images = res.scalar()
+    assert images[0]["url"] == "http://updated.jpg"
+
+@pytest.mark.asyncio
+@patch("src.modules.products.router.send_moderation_event")
+async def test_delete_product_image(mock_send, client: AsyncClient, setup_data: dict, test_db: AsyncSession):
+    headers = {"Authorization": f"Bearer {setup_data['token']}"}
+    product_id = setup_data["product_id_mod"]
+    
+    img_id = str(uuid.uuid4())
+    await test_db.execute(text(f"UPDATE products SET images = '[{{\"id\": \"{img_id}\", \"url\": \"http://old.jpg\", \"ordering\": 0}}]' WHERE id = '{product_id}'"))
+    await test_db.flush()
+    
+    response = await client.delete(f"/api/v1/products/images/{img_id}", headers=headers)
+    assert response.status_code == 204
+    
+    res = await test_db.execute(text(f"SELECT images FROM products WHERE id = '{product_id}'"))
+    images = res.scalar()
+    assert len(images) == 0

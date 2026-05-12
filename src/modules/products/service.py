@@ -89,11 +89,10 @@ class ProductService:
             raise ValueError("Cannot edit hard-blocked product")
             
         update_data = product_in.model_dump(exclude_unset=True)
-        if "images" in update_data and update_data["images"]:
-            update_data["images"] = sorted(update_data["images"], key=lambda x: x["ordering"])
             
         status_changed = False
-        if product.status in [ProductStatus.MODERATED, ProductStatus.BLOCKED]:
+        # If any field is updated, we might need to reset moderation status
+        if update_data and product.status in [ProductStatus.MODERATED, ProductStatus.BLOCKED]:
             update_data["status"] = ProductStatus.ON_MODERATION
             status_changed = True
             
@@ -103,3 +102,88 @@ class ProductService:
             await db.commit()
             
         return await ProductService.get_by_id(db, product_id), status_changed
+
+    @staticmethod
+    async def add_image(db: AsyncSession, product_id: UUID, image_in, seller_id: UUID) -> tuple[dict, bool, Product]:
+        product = await ProductService.get_by_id(db, product_id)
+        if not product:
+            raise ValueError("Product not found")
+        if product.seller_id != seller_id:
+            raise ValueError("Product does not belong to the authenticated seller")
+        if product.status == ProductStatus.HARD_BLOCKED:
+            raise ValueError("Cannot edit hard-blocked product")
+            
+        new_image = image_in.model_dump()
+        new_image["id"] = str(uuid.uuid4())
+        
+        images = list(product.images)
+        images.append(new_image)
+        images = sorted(images, key=lambda x: x["ordering"])
+        
+        update_data = {"images": images}
+        status_changed = False
+        if product.status in [ProductStatus.MODERATED, ProductStatus.BLOCKED]:
+            update_data["status"] = ProductStatus.ON_MODERATION
+            status_changed = True
+            
+        await db.execute(update(Product).where(Product.id == product_id).values(**update_data))
+        await db.commit()
+        return new_image, status_changed, product
+
+    @staticmethod
+    async def update_image(db: AsyncSession, image_id: UUID, image_in, seller_id: UUID) -> tuple[dict, bool, Product]:
+        query = select(Product).where(Product.images.contains([{"id": str(image_id)}]))
+        result = await db.execute(query)
+        product = result.scalar_one_or_none()
+        
+        if not product:
+            raise ValueError("Image not found")
+        if product.seller_id != seller_id:
+            raise ValueError("Product does not belong to the authenticated seller")
+        if product.status == ProductStatus.HARD_BLOCKED:
+            raise ValueError("Cannot edit hard-blocked product")
+            
+        images = list(product.images)
+        image_to_update = next((img for img in images if img["id"] == str(image_id)), None)
+        if not image_to_update:
+            raise ValueError("Image not found in product")
+            
+        update_data = image_in.model_dump(exclude_unset=True)
+        image_to_update.update(update_data)
+        
+        images = sorted(images, key=lambda x: x["ordering"])
+        
+        product_update_data = {"images": images}
+        status_changed = False
+        if product.status in [ProductStatus.MODERATED, ProductStatus.BLOCKED]:
+            product_update_data["status"] = ProductStatus.ON_MODERATION
+            status_changed = True
+            
+        await db.execute(update(Product).where(Product.id == product.id).values(**product_update_data))
+        await db.commit()
+        return image_to_update, status_changed, product
+
+    @staticmethod
+    async def delete_image(db: AsyncSession, image_id: UUID, seller_id: UUID) -> tuple[bool, Product]:
+        query = select(Product).where(Product.images.contains([{"id": str(image_id)}]))
+        result = await db.execute(query)
+        product = result.scalar_one_or_none()
+        
+        if not product:
+            raise ValueError("Image not found")
+        if product.seller_id != seller_id:
+            raise ValueError("Product does not belong to the authenticated seller")
+        if product.status == ProductStatus.HARD_BLOCKED:
+            raise ValueError("Cannot edit hard-blocked product")
+            
+        images = [img for img in product.images if img["id"] != str(image_id)]
+        
+        product_update_data = {"images": images}
+        status_changed = False
+        if product.status in [ProductStatus.MODERATED, ProductStatus.BLOCKED]:
+            product_update_data["status"] = ProductStatus.ON_MODERATION
+            status_changed = True
+            
+        await db.execute(update(Product).where(Product.id == product.id).values(**product_update_data))
+        await db.commit()
+        return status_changed, product

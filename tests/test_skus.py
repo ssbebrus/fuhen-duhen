@@ -62,18 +62,18 @@ async def setup_data(test_db: AsyncSession):
         f"VALUES ('{product_id_other}', 'P Oth', 'CREATED', '{category_id}', '{seller_id_2}', '[]', '[]', now(), now())"
     ))
 
-    # Create SKU with reserves for product_id_reserves
+    # Create SKU for product_id_reserves
     sku_id_reserves = uuid.uuid4()
     await test_db.execute(text(
-        f"INSERT INTO skus (id, product_id, name, price, cost_price, discount, image, active_quantity, reserved_quantity, characteristics, created_at, updated_at) "
-        f"VALUES ('{sku_id_reserves}', '{product_id_reserves}', 'SKU Res', 1000, 500, 0, 'http://img', 10, 5, '[]', now(), now())"
+        f"INSERT INTO skus (id, product_id, name, price, stock_quantity, article, images, characteristics, created_at, updated_at) "
+        f"VALUES ('{sku_id_reserves}', '{product_id_reserves}', 'SKU Res', 1000, 10, 'ART-RES', '[]', '[]', now(), now())"
     ))
     
     # Create SKU for product 2 (other seller)
     sku_id_other = uuid.uuid4()
     await test_db.execute(text(
-        f"INSERT INTO skus (id, product_id, name, price, cost_price, discount, image, active_quantity, reserved_quantity, characteristics, created_at, updated_at) "
-        f"VALUES ('{sku_id_other}', '{product_id_other}', 'SKU Oth', 1000, 500, 0, 'http://img', 10, 0, '[]', now(), now())"
+        f"INSERT INTO skus (id, product_id, name, price, stock_quantity, article, images, characteristics, created_at, updated_at) "
+        f"VALUES ('{sku_id_other}', '{product_id_other}', 'SKU Oth', 1000, 10, 'ART-OTH', '[]', '[]', now(), now())"
     ))
 
     await test_db.flush()
@@ -200,9 +200,13 @@ async def test_missing_required_fields_returns_400(client: AsyncClient, setup_da
     response = await client.post("/api/v1/skus/create", json=payload_no_price, headers=headers)
     assert response.status_code in [400, 422]
 
-    response_missing = await client.post("/api/v1/skus/", json=payload_missing, headers=headers)
-    # FastAPI schema validation returns 422 for missing fields, but b2b.yaml maps it sometimes or our custom exception handler does 400.
-    assert response_missing.status_code in [400, 422]
+    # Missing product_id
+    payload_no_product = {
+        "name": "No product",
+        "price": 1000
+    }
+    response = await client.post("/api/v1/skus/create", json=payload_no_product, headers=headers)
+    assert response.status_code in [400, 422]
 
 @pytest.mark.asyncio
 async def test_reserves_preserved_after_sku_edit(client: AsyncClient, setup_data: dict, test_db: AsyncSession):
@@ -210,37 +214,30 @@ async def test_reserves_preserved_after_sku_edit(client: AsyncClient, setup_data
     payload = {
         "name": "SKU Res Updated",
         "price": 1200,
-        "cost_price": 600,
-        "discount": 0,
-        "image": "http://img2",
-        "characteristics": []
+        "article": "new-article"
     }
     sku_id = setup_data["sku_id_reserves"]
     
-    response = await client.put(f"/api/v1/skus/{sku_id}", json=payload, headers=headers)
+    response = await client.patch(f"/api/v1/skus/{sku_id}", json=payload, headers=headers)
     assert response.status_code == 200
     data = response.json()
     assert data["name"] == "SKU Res Updated"
     
-    # Check DB directly to ensure reserved_quantity is unchanged
-    res = await test_db.execute(text(f"SELECT reserved_quantity FROM skus WHERE id = '{sku_id}'"))
-    db_reserved = res.scalar()
-    assert db_reserved == 5
+    # Check DB directly to ensure stock_quantity is unchanged
+    res = await test_db.execute(text(f"SELECT stock_quantity FROM skus WHERE id = '{sku_id}'"))
+    db_stock = res.scalar()
+    assert db_stock == 10
 
 @pytest.mark.asyncio
 async def test_edit_others_sku_returns_403(client: AsyncClient, setup_data: dict):
     headers = {"Authorization": f"Bearer {setup_data['token']}"}
     payload = {
         "name": "SKU Oth Updated",
-        "price": 1200,
-        "cost_price": 600,
-        "discount": 0,
-        "image": "http://img2",
-        "characteristics": []
+        "price": 1200
     }
     sku_id = setup_data["sku_id_other"]
     
-    response = await client.put(f"/api/v1/skus/{sku_id}", json=payload, headers=headers)
+    response = await client.patch(f"/api/v1/skus/{sku_id}", json=payload, headers=headers)
     assert response.status_code == 403
     assert response.json()["detail"]["code"] == "NOT_OWNER"
 
@@ -250,17 +247,13 @@ async def test_edit_sku_returns_product_to_on_moderation(mock_send, client: Asyn
     headers = {"Authorization": f"Bearer {setup_data['token']}"}
     payload = {
         "name": "SKU Res Edited",
-        "price": 1500,
-        "cost_price": 700,
-        "discount": 0,
-        "image": "http://img3",
-        "characteristics": []
+        "price": 1500
     }
     sku_id = setup_data["sku_id_reserves"]
     product_id = setup_data["product_id_reserves"]
     
     # In setup_data, product_id_reserves status is MODERATED
-    response = await client.put(f"/api/v1/skus/{sku_id}", json=payload, headers=headers)
+    response = await client.patch(f"/api/v1/skus/{sku_id}", json=payload, headers=headers)
     assert response.status_code == 200
     
     # Verify product state changed to ON_MODERATION
@@ -268,3 +261,50 @@ async def test_edit_sku_returns_product_to_on_moderation(mock_send, client: Asyn
     db_status = res.scalar()
     assert db_status == "ON_MODERATION"
     mock_send.assert_called_once_with(product_id, setup_data["seller_id"], "EDITED")
+
+@pytest.mark.asyncio
+@patch("src.modules.skus.router.send_moderation_event")
+async def test_add_sku_image(mock_send, client: AsyncClient, setup_data: dict, test_db: AsyncSession):
+    headers = {"Authorization": f"Bearer {setup_data['token']}"}
+    sku_id = setup_data["sku_id_reserves"]
+    payload = {"url": "http://new-sku-img.jpg", "ordering": 5}
+    
+    response = await client.post(f"/api/v1/skus/{sku_id}/images", json=payload, headers=headers)
+    assert response.status_code == 201
+    assert response.json()["url"] == "http://new-sku-img.jpg"
+    
+    res = await test_db.execute(text(f"SELECT images FROM skus WHERE id = '{sku_id}'"))
+    images = res.scalar()
+    assert any(img["url"] == "http://new-sku-img.jpg" for img in images)
+
+@pytest.mark.asyncio
+@patch("src.modules.skus.router.send_moderation_event")
+async def test_update_sku_image(mock_send, client: AsyncClient, setup_data: dict, test_db: AsyncSession):
+    headers = {"Authorization": f"Bearer {setup_data['token']}"}
+    sku_id = setup_data["sku_id_reserves"]
+    
+    img_id = str(uuid.uuid4())
+    await test_db.execute(text(f"UPDATE skus SET images = '[{{\"id\": \"{img_id}\", \"url\": \"http://old.jpg\", \"ordering\": 0}}]' WHERE id = '{sku_id}'"))
+    await test_db.flush()
+    
+    payload = {"url": "http://updated-sku.jpg"}
+    response = await client.patch(f"/api/v1/skus/images/{img_id}", json=payload, headers=headers)
+    assert response.status_code == 200
+    assert response.json()["url"] == "http://updated-sku.jpg"
+
+@pytest.mark.asyncio
+@patch("src.modules.skus.router.send_moderation_event")
+async def test_delete_sku_image(mock_send, client: AsyncClient, setup_data: dict, test_db: AsyncSession):
+    headers = {"Authorization": f"Bearer {setup_data['token']}"}
+    sku_id = setup_data["sku_id_reserves"]
+    
+    img_id = str(uuid.uuid4())
+    await test_db.execute(text(f"UPDATE skus SET images = '[{{\"id\": \"{img_id}\", \"url\": \"http://old.jpg\", \"ordering\": 0}}]' WHERE id = '{sku_id}'"))
+    await test_db.flush()
+    
+    response = await client.delete(f"/api/v1/skus/images/{img_id}", headers=headers)
+    assert response.status_code == 204
+    
+    res = await test_db.execute(text(f"SELECT images FROM skus WHERE id = '{sku_id}'"))
+    images = res.scalar()
+    assert len(images) == 0

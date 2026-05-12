@@ -20,6 +20,13 @@ class SKUImageBase(BaseModel):
 class SKUImageCreate(SKUImageBase):
     pass
 
+class SKUImageCreateRequest(SKUImageCreate):
+    pass
+
+class SKUImageUpdateRequest(BaseModel):
+    url: Optional[str] = None
+    ordering: Optional[int] = None
+
 class SKUImageResponse(SKUImageBase):
     id: UUID
 
