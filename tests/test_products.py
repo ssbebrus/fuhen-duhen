@@ -10,17 +10,6 @@ from src.db.database import AsyncSessionLocal
 from src.config import settings
 
 @pytest.fixture
-async def client():
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        yield ac
-
-@pytest.fixture
-async def test_db():
-    async with AsyncSessionLocal() as session:
-        yield session
-
-@pytest.fixture
 async def setup_data(test_db: AsyncSession):
     # Create seller
     seller_id = uuid.uuid4()
@@ -37,21 +26,16 @@ async def setup_data(test_db: AsyncSession):
         f"VALUES ('{category_id}', 'TestCat', 0, '{category_id}', true, now(), now())"
     ))
     
-    await test_db.commit()
+    # Мы НЕ делаем commit() здесь, так как conftest.py откатит транзакцию в конце теста.
+    # Но если мы хотим, чтобы данные были видны в других сессиях (хотя у нас одна), можно сделать flush.
+    await test_db.flush()
     
     # Generate token
     token = jwt.encode({"sub": str(seller_id)}, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
     
     yield {"seller_id": seller_id, "category_id": category_id, "token": token}
     
-    # Teardown - ignore errors
-    try:
-        await test_db.execute(text("DELETE FROM products"))
-        await test_db.execute(text(f"DELETE FROM categories WHERE id = '{category_id}'"))
-        await test_db.execute(text(f"DELETE FROM sellers WHERE id = '{seller_id}'"))
-        await test_db.commit()
-    except Exception:
-        await test_db.rollback()
+    # Ручная очистка больше не нужна, так как вся транзакция откатывается.
 
 @pytest.mark.asyncio
 async def test_create_product_returns_201_with_created_status(client: AsyncClient, setup_data: dict):

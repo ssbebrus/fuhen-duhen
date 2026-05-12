@@ -16,6 +16,7 @@ class ProductStatus(str, enum.Enum):
     ON_MODERATION = "ON_MODERATION"
     MODERATED = "MODERATED"
     BLOCKED = "BLOCKED"
+    HARD_BLOCKED = "HARD_BLOCKED"
     DELETED = "DELETED"
 
 class Product(Base, TimestampMixin):
