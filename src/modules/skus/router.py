@@ -8,27 +8,16 @@ from uuid import UUID
 from src.db.database import get_db
 from src.config import settings
 from src.modules.products.models import ProductStatus
-from .schemas import SKUCreate, SKUUpdate, SKUResponse
+from .schemas import (
+    SKUCreate, SKUUpdate, SKUResponse,
+    SKUImageCreateRequest, SKUImageUpdateRequest, SKUImageResponse
+)
 from .service import SKUService
+from src.modules.auth.dependencies import get_current_seller
+from src.modules.auth.models import Seller
+from src.modules.common.events import send_moderation_event
 
 router = APIRouter(prefix="/skus", tags=["SKUs"])
-
-async def send_moderation_event(product_id: UUID, seller_id: UUID):
-    event_data = {
-        "idempotency_key": str(uuid.uuid4()),
-        "product_id": str(product_id),
-        "seller_id": str(seller_id),
-        "event": "CREATED",
-        "date": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-    }
-    url = f"{settings.MODERATION_URL}/api/v1/events/product"
-    headers = {"X-Service-Key": settings.B2B_TO_MOD_KEY}
-    
-    async with httpx.AsyncClient() as client:
-        try:
-            await client.post(url, json=event_data, headers=headers, timeout=5.0)
-        except Exception:
-            pass
 
 @router.post("/create", response_model=SKUResponse, status_code=status.HTTP_201_CREATED, summary="Создать SKU")
 async def create_sku(sku_in: SKUCreate, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
@@ -37,8 +26,7 @@ async def create_sku(sku_in: SKUCreate, background_tasks: BackgroundTasks, db: A
         raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": "price must be a positive integer (kopecks)"})
     
     # Validation from openapi: name is required by schema, Pydantic handles it.
-    # Images and characteristics are optional with default []
-        
+    # Images and characteristics are optional with default []    
     try:
         new_sku, status_changed, product = await SKUService.create(db, sku_in)
     except ValueError as e:
@@ -53,10 +41,100 @@ async def create_sku(sku_in: SKUCreate, background_tasks: BackgroundTasks, db: A
         
     return new_sku
 
-@router.put("/{sku_id}", response_model=SKUResponse, summary="Изменить SKU")
-async def update_sku(sku_id: UUID, sku_in: SKUUpdate, db: AsyncSession = Depends(get_db)):
-    """Изменить SKU"""
-    sku = await SKUService.update(db, sku_id, sku_in)
-    if not sku:
-        raise HTTPException(status_code=404, detail="SKU не найден")
+@router.patch("/{sku_id}", response_model=SKUResponse, summary="Обновить SKU")
+async def update_sku(
+    sku_id: UUID, 
+    sku_in: SKUUpdate, 
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    seller: Seller = Depends(get_current_seller)
+):
+    """Обновить SKU"""
+    try:
+        sku, status_changed = await SKUService.update(db, sku_id, sku_in, seller.id)
+    except ValueError as e:
+        if str(e) == "SKU not found" or str(e) == "Product not found":
+            raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "SKU not found"})
+        elif str(e) == "Product does not belong to the authenticated seller":
+            raise HTTPException(status_code=403, detail={"code": "NOT_OWNER", "message": "Product does not belong to the authenticated seller"})
+        elif str(e) == "Cannot edit SKU of a hard-blocked product":
+            raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "Cannot edit hard-blocked product"})
+        raise
+        
+    if status_changed:
+        background_tasks.add_task(send_moderation_event, sku.product_id, seller.id, "EDITED")
+        
     return sku
+
+@router.post("/{sku_id}/images", response_model=SKUImageResponse, status_code=status.HTTP_201_CREATED, summary="Добавить изображение к SKU")
+async def add_sku_image(
+    sku_id: UUID,
+    image_in: SKUImageCreateRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    seller: Seller = Depends(get_current_seller)
+):
+    """Добавить изображение к SKU"""
+    try:
+        new_image, status_changed, product = await SKUService.add_image(db, sku_id, image_in, seller.id)
+    except ValueError as e:
+        if str(e) == "SKU not found":
+            raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "SKU not found"})
+        elif str(e) == "Product not found":
+            raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Product not found"})
+        elif str(e) == "Product does not belong to the authenticated seller":
+            raise HTTPException(status_code=403, detail={"code": "NOT_OWNER", "message": "Product does not belong to the authenticated seller"})
+        elif str(e) == "Cannot edit SKU of a hard-blocked product":
+            raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "Cannot edit hard-blocked product"})
+        raise
+
+    if status_changed:
+        background_tasks.add_task(send_moderation_event, product.id, product.seller_id, "EDITED")
+    return new_image
+
+@router.patch("/images/{image_id}", response_model=SKUImageResponse, summary="Обновить изображение SKU")
+async def update_sku_image(
+    image_id: UUID,
+    image_in: SKUImageUpdateRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    seller: Seller = Depends(get_current_seller)
+):
+    """Обновить изображение SKU"""
+    try:
+        updated_image, status_changed, product = await SKUService.update_image(db, image_id, image_in, seller.id)
+    except ValueError as e:
+        if str(e) == "Image not found":
+            raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Image not found"})
+        elif str(e) == "Product does not belong to the authenticated seller":
+            raise HTTPException(status_code=403, detail={"code": "NOT_OWNER", "message": "Product does not belong to the authenticated seller"})
+        elif str(e) == "Cannot edit SKU of a hard-blocked product":
+            raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "Cannot edit hard-blocked product"})
+        raise
+
+    if status_changed:
+        background_tasks.add_task(send_moderation_event, product.id, product.seller_id, "EDITED")
+    return updated_image
+
+@router.delete("/images/{image_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Удалить изображение SKU")
+async def delete_sku_image(
+    image_id: UUID,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    seller: Seller = Depends(get_current_seller)
+):
+    """Удалить изображение SKU"""
+    try:
+        status_changed, product = await SKUService.delete_image(db, image_id, seller.id)
+    except ValueError as e:
+        if str(e) == "Image not found":
+            raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Image not found"})
+        elif str(e) == "Product does not belong to the authenticated seller":
+            raise HTTPException(status_code=403, detail={"code": "NOT_OWNER", "message": "Product does not belong to the authenticated seller"})
+        elif str(e) == "Cannot edit SKU of a hard-blocked product":
+            raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "Cannot edit hard-blocked product"})
+        raise
+
+    if status_changed:
+        background_tasks.add_task(send_moderation_event, product.id, product.seller_id, "EDITED")
+    return None

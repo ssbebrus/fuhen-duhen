@@ -1,13 +1,17 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 from uuid import UUID
 
 from src.db.database import get_db
-from .schemas import ProductCreate, ProductUpdate, ProductResponse, PaginatedProductResponse
+from .schemas import (
+    ProductCreate, ProductUpdate, ProductResponse, PaginatedProductResponse,
+    ProductImageCreateRequest, ProductImageUpdateRequest, ProductImageResponse
+)
 from .service import ProductService
 from src.modules.auth.dependencies import get_current_seller
 from src.modules.auth.models import Seller
+from src.modules.common.events import send_moderation_event
 
 router = APIRouter(prefix="/products", tags=["Products"])
 
@@ -37,15 +41,98 @@ async def create_product(
     """Создать новый товар"""
     return await ProductService.create(db, product_in, seller_id=seller.id)
 
-@router.put("/{product_id}", response_model=ProductResponse, summary="Изменить товар")
+@router.patch("/{product_id}", response_model=ProductResponse, summary="Обновить товар")
 async def update_product(
     product_id: UUID, 
     product_in: ProductUpdate, 
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     seller: Seller = Depends(get_current_seller)
 ):
-    """Изменить товар"""
-    product = await ProductService.update(db, product_id, product_in)
-    if not product:
-        raise HTTPException(status_code=404, detail="Товар не найден")
+    """Обновить товар"""
+    try:
+        product, status_changed = await ProductService.update(db, product_id, product_in, seller.id)
+    except ValueError as e:
+        if str(e) == "Product not found":
+            raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Product not found"})
+        elif str(e) == "Product does not belong to the authenticated seller":
+            raise HTTPException(status_code=403, detail={"code": "NOT_OWNER", "message": "Product does not belong to the authenticated seller"})
+        elif str(e) == "Cannot edit hard-blocked product":
+            raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "Cannot edit hard-blocked product"})
+        raise
+        
+    if status_changed:
+        background_tasks.add_task(send_moderation_event, product.id, product.seller_id, "EDITED")
+        
     return product
+
+@router.post("/{product_id}/images", response_model=ProductImageResponse, status_code=status.HTTP_201_CREATED, summary="Добавить изображение к товару")
+async def add_product_image(
+    product_id: UUID,
+    image_in: ProductImageCreateRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    seller: Seller = Depends(get_current_seller)
+):
+    """Добавить изображение к товару"""
+    try:
+        new_image, status_changed, product = await ProductService.add_image(db, product_id, image_in, seller.id)
+    except ValueError as e:
+        if str(e) == "Product not found":
+            raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Product not found"})
+        elif str(e) == "Product does not belong to the authenticated seller":
+            raise HTTPException(status_code=403, detail={"code": "NOT_OWNER", "message": "Product does not belong to the authenticated seller"})
+        elif str(e) == "Cannot edit hard-blocked product":
+            raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "Cannot edit hard-blocked product"})
+        raise
+
+    if status_changed:
+        background_tasks.add_task(send_moderation_event, product.id, product.seller_id, "EDITED")
+    return new_image
+
+@router.patch("/images/{image_id}", response_model=ProductImageResponse, summary="Обновить изображение товара")
+async def update_product_image(
+    image_id: UUID,
+    image_in: ProductImageUpdateRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    seller: Seller = Depends(get_current_seller)
+):
+    """Обновить изображение товара"""
+    try:
+        updated_image, status_changed, product = await ProductService.update_image(db, image_id, image_in, seller.id)
+    except ValueError as e:
+        if str(e) == "Image not found":
+            raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Image not found"})
+        elif str(e) == "Product does not belong to the authenticated seller":
+            raise HTTPException(status_code=403, detail={"code": "NOT_OWNER", "message": "Product does not belong to the authenticated seller"})
+        elif str(e) == "Cannot edit hard-blocked product":
+            raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "Cannot edit hard-blocked product"})
+        raise
+
+    if status_changed:
+        background_tasks.add_task(send_moderation_event, product.id, product.seller_id, "EDITED")
+    return updated_image
+
+@router.delete("/images/{image_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Удалить изображение товара")
+async def delete_product_image(
+    image_id: UUID,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    seller: Seller = Depends(get_current_seller)
+):
+    """Удалить изображение товара"""
+    try:
+        status_changed, product = await ProductService.delete_image(db, image_id, seller.id)
+    except ValueError as e:
+        if str(e) == "Image not found":
+            raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Image not found"})
+        elif str(e) == "Product does not belong to the authenticated seller":
+            raise HTTPException(status_code=403, detail={"code": "NOT_OWNER", "message": "Product does not belong to the authenticated seller"})
+        elif str(e) == "Cannot edit hard-blocked product":
+            raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "Cannot edit hard-blocked product"})
+        raise
+
+    if status_changed:
+        background_tasks.add_task(send_moderation_event, product.id, product.seller_id, "EDITED")
+    return None
