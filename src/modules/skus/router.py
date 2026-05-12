@@ -11,7 +11,7 @@ from src.modules.products.models import ProductStatus
 from .schemas import SKUCreate, SKUUpdate, SKUResponse
 from .service import SKUService
 
-router = APIRouter(prefix="/skus", tags=["SKU"])
+router = APIRouter(prefix="/skus", tags=["SKUs"])
 
 async def send_moderation_event(product_id: UUID, seller_id: UUID):
     event_data = {
@@ -30,17 +30,14 @@ async def send_moderation_event(product_id: UUID, seller_id: UUID):
         except Exception:
             pass
 
-@router.post("/", response_model=SKUResponse, status_code=status.HTTP_201_CREATED, summary="Создать SKU")
+@router.post("/create", response_model=SKUResponse, status_code=status.HTTP_201_CREATED, summary="Создать SKU")
 async def create_sku(sku_in: SKUCreate, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
     """Создать новый SKU"""
     if sku_in.price <= 0:
         raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": "price must be a positive integer (kopecks)"})
-    if sku_in.cost_price <= 0:
-        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": "cost_price must be a positive integer (kopecks)"})
-    if not sku_in.name:
-        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": "name is required"})
-    if not sku_in.image:
-        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": "image is required"})
+    
+    # Validation from openapi: name is required by schema, Pydantic handles it.
+    # Images and characteristics are optional with default []
         
     try:
         new_sku, status_changed, product = await SKUService.create(db, sku_in)

@@ -1,6 +1,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 from typing import List, Optional
+import uuid
 from uuid import UUID
 
 from .models import SKU
@@ -30,6 +31,16 @@ class SKUService:
         is_first_sku = (sku_count == 0)
 
         data = sku_in.model_dump()
+        
+        # Add IDs to images and characteristics if they don't have them
+        for img in data.get("images", []):
+            if "id" not in img:
+                img["id"] = str(uuid.uuid4())
+        
+        for char in data.get("characteristics", []):
+            if "id" not in char:
+                char["id"] = str(uuid.uuid4())
+                
         new_sku = SKU(**data)
         db.add(new_sku)
 
