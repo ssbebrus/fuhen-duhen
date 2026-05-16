@@ -9,6 +9,6 @@ class Image(BaseModel):
 
 class PaginatedResponse(BaseModel, Generic[T]):
     items: List[T]
-    total: int
+    total_count: int
     limit: int
     offset: int

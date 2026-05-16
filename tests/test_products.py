@@ -40,11 +40,11 @@ async def setup_data(test_db: AsyncSession):
     product_id_other = uuid.uuid4()
     
     await test_db.execute(text(
-        f"INSERT INTO products (id, title, status, category_id, seller_id, images, characteristics, created_at, updated_at) "
-        f"VALUES ('{product_id_mod}', 'P Mod', 'MODERATED', '{category_id}', '{seller_id}', '[]', '[]', now(), now()), "
-        f"('{product_id_blk}', 'P Blk', 'BLOCKED', '{category_id}', '{seller_id}', '[]', '[]', now(), now()), "
-        f"('{product_id_hblk}', 'P Hblk', 'HARD_BLOCKED', '{category_id}', '{seller_id}', '[]', '[]', now(), now()), "
-        f"('{product_id_other}', 'P Oth', 'CREATED', '{category_id}', '{seller_id_2}', '[]', '[]', now(), now())"
+        f"INSERT INTO products (id, title, slug, status, category_id, seller_id, images, characteristics, created_at, updated_at) "
+        f"VALUES ('{product_id_mod}', 'P Mod', 'p-mod', 'MODERATED', '{category_id}', '{seller_id}', '[]', '[]', now(), now()), "
+        f"('{product_id_blk}', 'P Blk', 'p-blk', 'BLOCKED', '{category_id}', '{seller_id}', '[]', '[]', now(), now()), "
+        f"('{product_id_hblk}', 'P Hblk', 'p-hblk', 'HARD_BLOCKED', '{category_id}', '{seller_id}', '[]', '[]', now(), now()), "
+        f"('{product_id_other}', 'P Oth', 'p-oth', 'CREATED', '{category_id}', '{seller_id_2}', '[]', '[]', now(), now())"
     ))
     
     # Мы НЕ делаем commit() здесь, так как conftest.py откатит транзакцию в конце теста.

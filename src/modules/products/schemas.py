@@ -4,7 +4,7 @@ from uuid import UUID
 from datetime import datetime
 from .models import ProductStatus
 from src.modules.common.schemas import PaginatedResponse
-from src.modules.skus.schemas import SKUShortResponse
+from src.modules.skus.schemas import SKUResponse
 
 class CategoryRef(BaseModel):
     id: UUID
@@ -46,6 +46,7 @@ class ProductBase(BaseModel):
     title: str = Field(..., min_length=1, max_length=255, title="Title")
     description: str = Field(..., min_length=1, max_length=5000, title="Description")
     category_id: UUID = Field(..., title="Category Id")
+    slug: Optional[str] = Field(None, title="Slug")
     images: List[ProductImageCreate] = Field(..., min_length=1, title="Images")
     characteristics: List[ProductCharacteristicCreate] = Field(default=[], title="Characteristics")
 
@@ -56,19 +57,22 @@ class ProductUpdate(BaseModel):
     title: Optional[str] = Field(None, min_length=1, max_length=255, title="Title")
     description: Optional[str] = Field(None, title="Description")
     category_id: Optional[UUID] = Field(None, title="Category Id")
-    status: Optional[ProductStatus] = Field(None, title="Status")
+    characteristics: Optional[List[ProductCharacteristicCreate]] = Field(None, title="Characteristics")
 
 class ProductResponse(BaseModel):
     id: UUID = Field(..., title="Id")
     seller_id: UUID = Field(..., title="Seller Id")
+    category_id: UUID = Field(..., title="Category Id")
     title: str = Field(..., title="Title")
+    slug: str = Field(..., title="Slug")
     description: str = Field(..., title="Description")
     status: ProductStatus
     deleted: bool = Field(..., title="Deleted")
-    blocked: bool = Field(..., title="Blocked")
+    blocking_reason_id: Optional[UUID] = Field(None, title="Blocking Reason Id")
+    moderator_comment: Optional[str] = Field(None, title="Moderator Comment")
     images: List[ProductImageResponse] = Field(..., title="Images")
     characteristics: List[ProductCharacteristicResponse] = Field(..., title="Characteristics")
-    skus: List[SKUShortResponse] = Field(..., title="Skus")
+    skus: List[SKUResponse] = Field(..., title="Skus")
     category: CategoryRef = Field(..., title="Category")
     created_at: datetime = Field(..., title="Created At")
     updated_at: datetime = Field(..., title="Updated At")

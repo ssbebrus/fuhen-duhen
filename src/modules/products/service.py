@@ -11,6 +11,15 @@ from .models import Product
 from .schemas import ProductCreate, ProductUpdate
 from src.modules.categories.service import CategoryService
 
+import re
+
+def slugify(text: str) -> str:
+    text = text.lower()
+    text = re.sub(r'[^\w\s-]', '', text)
+    text = re.sub(r'[\s_-]+', '-', text)
+    text = re.sub(r'^-+|-+$', '', text)
+    return text
+
 class ProductService:
     @staticmethod
     async def get_all(db: AsyncSession, limit: int = 10, offset: int = 0) -> dict:
@@ -32,7 +41,7 @@ class ProductService:
         
         return {
             "items": items,
-            "total": total,
+            "total_count": total,
             "limit": limit,
             "offset": offset
         }
@@ -58,6 +67,9 @@ class ProductService:
             )
 
         data = product_in.model_dump()
+        if not data.get("slug"):
+            data["slug"] = slugify(data["title"])
+            
         if data.get("images"):
             for img in data["images"]:
                 img["id"] = str(uuid.uuid4())
