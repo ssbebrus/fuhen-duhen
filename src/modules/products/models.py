@@ -29,8 +29,8 @@ class Product(Base, TimestampMixin):
     deleted: Mapped[bool] = mapped_column(default=False, server_default="false")
     blocking_reason_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=True)
     moderator_comment: Mapped[str] = mapped_column(Text, nullable=True)
-    images: Mapped[list[dict]] = mapped_column(JSONB, default=list)  # List of {"url": "...", "ordering": 0}
-    characteristics: Mapped[list[dict]] = mapped_column(JSONB, default=list)  # List of {"name": "...", "value": "..."}
+    images: Mapped[list[dict]] = mapped_column(JSONB, default=list)  # Список {"url": "...", "ordering": 0}
+    characteristics: Mapped[list[dict]] = mapped_column(JSONB, default=list)  # Список {"name": "...", "value": "..."}
     
     category_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("categories.id"))
     seller_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("sellers.id"), index=True, nullable=False)

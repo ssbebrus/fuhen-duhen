@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from src.config import settings
@@ -9,6 +9,18 @@ app = FastAPI(
     openapi_url=f"{settings.API_V1_STR}/openapi.json"
 )
 
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    if isinstance(exc.detail, dict) and "code" in exc.detail and "message" in exc.detail:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=exc.detail,
+        )
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"code": "ERROR", "message": str(exc.detail)},
+    )
+
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     errors = exc.errors()
@@ -17,7 +29,6 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         err = errors[0]
         field = ".".join([str(loc) for loc in err["loc"] if loc != "body"])
         message = f"{field} {err['msg']}".strip()
-        # Customizing some messages based on b2b.yaml requirements
         if "category_id" in field and "missing" in err['msg'].lower():
             message = "category_id is required"
         elif "title" in field and "missing" in err['msg'].lower():
@@ -27,7 +38,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
             
     return JSONResponse(
         status_code=400,
-        content={"code": "INVALID_REQUEST", "message": message},
+        content={"code": "VALIDATION_ERROR", "message": message},
     )
 
 app.include_router(api_router, prefix=settings.API_V1_STR)

@@ -38,6 +38,8 @@ class SKUBase(BaseModel):
     article: Optional[str] = None
 
 class SKUCreate(SKUBase):
+    cost_price: int = Field(gt=0, description="Цена в копейках")
+    discount: int = Field(default=0, ge=0, description="Скидка в копейках")
     images: List[SKUImageCreate] = []
     characteristics: List[SKUCharacteristicCreate] = []
 
@@ -48,6 +50,10 @@ class SKUUpdate(BaseModel):
 
 class SKUResponse(SKUBase):
     id: UUID
+    cost_price: int = 0
+    discount: int = 0
+    active_quantity: int = 0
+    reserved_quantity: int = 0
     images: List[SKUImageResponse] = []
     characteristics: List[SKUCharacteristicResponse] = []
     created_at: datetime
