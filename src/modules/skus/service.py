@@ -17,22 +17,24 @@ class SKUService:
         return result.scalar_one_or_none()
 
     @staticmethod
-    async def create(db: AsyncSession, sku_in: SKUCreate) -> tuple[SKU, bool, Optional[Product]]:
+    async def create(db: AsyncSession, sku_in: SKUCreate, seller_id: UUID) -> tuple[SKU, bool, Optional[Product]]:
         """Создать новый SKU и обновить статус товара если нужно"""
-        # Fetch the product
+        # Получаем товар
         product = await db.scalar(select(Product).where(Product.id == sku_in.product_id))
         if not product:
             raise ValueError("Product not found")
+        if product.seller_id != seller_id:
+            raise ValueError("Product does not belong to the authenticated seller")
         if product.status == ProductStatus.HARD_BLOCKED:
             raise ValueError("Product is hard-blocked")
 
-        # Check if it's the first SKU
+        # Проверяем, является ли это первым SKU
         sku_count = await db.scalar(select(func.count(SKU.id)).where(SKU.product_id == sku_in.product_id))
         is_first_sku = (sku_count == 0)
 
         data = sku_in.model_dump()
         
-        # Add IDs to images and characteristics if they don't have them
+        # Добавляем ID изображениям и характеристикам
         for img in data.get("images", []):
             if "id" not in img:
                 img["id"] = str(uuid.uuid4())

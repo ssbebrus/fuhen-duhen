@@ -19,21 +19,25 @@ from src.modules.common.events import send_moderation_event
 
 router = APIRouter(prefix="/skus", tags=["SKUs"])
 
-@router.post("/create", response_model=SKUResponse, status_code=status.HTTP_201_CREATED, summary="Создать SKU")
-async def create_sku(sku_in: SKUCreate, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
+@router.post("", response_model=SKUResponse, status_code=status.HTTP_201_CREATED, summary="Создать SKU")
+async def create_sku(
+    sku_in: SKUCreate,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    seller: Seller = Depends(get_current_seller)
+):
     """Создать новый SKU"""
     if sku_in.price <= 0:
         raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": "price must be a positive integer (kopecks)"})
-    
-    # Validation from openapi: name is required by schema, Pydantic handles it.
-    # Images and characteristics are optional with default []    
     try:
-        new_sku, status_changed, product = await SKUService.create(db, sku_in)
+        new_sku, status_changed, product = await SKUService.create(db, sku_in, seller.id)
     except ValueError as e:
         if str(e) == "Product not found":
             raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Product not found"})
         elif str(e) == "Product is hard-blocked":
             raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "Cannot add SKU to hard-blocked product"})
+        elif str(e) == "Product does not belong to the authenticated seller":
+            raise HTTPException(status_code=403, detail={"code": "NOT_OWNER", "message": "Product does not belong to the authenticated seller"})
         raise
         
     if status_changed:

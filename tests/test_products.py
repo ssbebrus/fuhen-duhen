@@ -162,7 +162,7 @@ async def test_invalid_category_id_returns_400(client: AsyncClient, setup_data: 
     
     response = await client.post("/api/v1/products/", json=payload, headers=headers)
     assert response.status_code == 400
-    assert response.json()["detail"]["code"] == "INVALID_REQUEST"
+    assert response.json()["code"] == "INVALID_REQUEST"
 
 from unittest.mock import patch
 
@@ -214,7 +214,7 @@ async def test_edit_hard_blocked_returns_403(client: AsyncClient, setup_data: di
     product_id = setup_data["product_id_hblk"]
     response = await client.patch(f"/api/v1/products/{product_id}", json=payload, headers=headers)
     assert response.status_code == 403
-    assert response.json()["detail"]["code"] == "FORBIDDEN"
+    assert response.json()["code"] == "FORBIDDEN"
 
 @pytest.mark.asyncio
 async def test_edit_others_product_returns_403(client: AsyncClient, setup_data: dict):
@@ -227,7 +227,7 @@ async def test_edit_others_product_returns_403(client: AsyncClient, setup_data: 
     product_id = setup_data["product_id_other"]
     response = await client.patch(f"/api/v1/products/{product_id}", json=payload, headers=headers)
     assert response.status_code == 403
-    assert response.json()["detail"]["code"] == "NOT_OWNER"
+    assert response.json()["code"] == "NOT_OWNER"
 
 @pytest.mark.asyncio
 @patch("src.modules.products.router.send_moderation_event")

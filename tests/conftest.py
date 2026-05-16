@@ -51,9 +51,8 @@ async def test_db(test_engine) -> AsyncGenerator[AsyncSession, None]:
     def end_savepoint(session_, transaction):
         nonlocal nested
         if not connection.closed and not connection.in_nested_transaction():
-            # Это хак для SQLAlchemy 2.0, чтобы поддерживать savepoint активным после commit
-            # В асинхронном режиме это сложнее, поэтому просто будем надеяться на rollback внешней транзакции.
-            pass
+            # SQLAlchemy 2.0 requires restarting the savepoint manually
+            nested = connection.sync_connection.begin_nested()
 
     async def override_get_db():
         yield session

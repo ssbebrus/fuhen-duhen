@@ -103,7 +103,7 @@ class ProductService:
         update_data = product_in.model_dump(exclude_unset=True)
             
         status_changed = False
-        # If any field is updated, we might need to reset moderation status
+        # Если поле товара было обновлено, устанавливаем статус ON_MODERATION
         if update_data and product.status in [ProductStatus.MODERATED, ProductStatus.BLOCKED]:
             update_data["status"] = ProductStatus.ON_MODERATION
             status_changed = True
