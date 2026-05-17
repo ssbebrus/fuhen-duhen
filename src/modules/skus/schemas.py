@@ -61,6 +61,21 @@ class SKUResponse(SKUBase):
 
     model_config = ConfigDict(from_attributes=True)
 
+class SKUPublicResponse(BaseModel):
+    id: UUID
+    product_id: UUID
+    name: str
+    price: int
+    discount: int = 0
+    active_quantity: int = 0
+    article: Optional[str] = None
+    images: List[SKUImageResponse] = []
+    characteristics: List[SKUCharacteristicResponse] = []
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
 class SKUShortResponse(BaseModel):
     id: UUID
     name: str

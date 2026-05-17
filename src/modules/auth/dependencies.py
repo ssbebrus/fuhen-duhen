@@ -1,8 +1,10 @@
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
+from pydantic import BaseModel
+from typing import Optional
 
 from src.db.database import get_db
 from src.config import settings
@@ -38,3 +40,28 @@ async def get_current_seller(auth: HTTPAuthorizationCredentials = Depends(securi
     if seller is None:
         raise credentials_exception
     return seller
+
+class AuthContext(BaseModel):
+    mode: str  # "seller" or "service"
+    seller_id: Optional[UUID] = None
+
+async def get_auth_context(request: Request, db: AsyncSession = Depends(get_db)) -> AuthContext:
+    service_key = request.headers.get("X-Service-Key")
+    if service_key:
+        if service_key != settings.SERVICE_KEY:
+            raise HTTPException(status_code=401, detail="Invalid X-Service-Key")
+        return AuthContext(mode="service")
+
+    # If no X-Service-Key, try JWT auth
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    token = auth_header.split(" ")[1]
+    credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+    seller = await get_current_seller(credentials, db)
+    return AuthContext(mode="seller", seller_id=seller.id)

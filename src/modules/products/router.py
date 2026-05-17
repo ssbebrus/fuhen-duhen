@@ -6,12 +6,14 @@ from uuid import UUID
 from src.db.database import get_db
 from .schemas import (
     ProductCreate, ProductUpdate, ProductResponse, PaginatedProductResponse,
-    ProductImageCreateRequest, ProductImageUpdateRequest, ProductImageResponse
+    ProductImageCreateRequest, ProductImageUpdateRequest, ProductImageResponse,
+    ProductPublicResponse, BlockingReason
 )
 from .service import ProductService
-from src.modules.auth.dependencies import get_current_seller
+from src.modules.auth.dependencies import get_current_seller, get_auth_context, AuthContext
 from src.modules.auth.models import Seller
 from src.modules.common.events import send_moderation_event, send_b2c_product_event
+from typing import Union
 
 router = APIRouter(prefix="/products", tags=["Products"])
 
@@ -26,13 +28,38 @@ async def get_products(
     """Получить список своих товаров с пагинацией"""
     return await ProductService.get_all(db, limit=limit, offset=offset, seller_id=seller.id, include_deleted=include_deleted)
 
-@router.get("/{product_id}", response_model=ProductResponse, summary="Получить товар по ID")
-async def get_product(product_id: UUID, db: AsyncSession = Depends(get_db)):
-    """Получить товар по ID"""
+@router.get("/{product_id}", response_model=Union[ProductResponse, ProductPublicResponse], summary="Получить товар по ID")
+async def get_product(
+    product_id: UUID, 
+    auth_context: AuthContext = Depends(get_auth_context),
+    db: AsyncSession = Depends(get_db)
+):
+    """Получить товар по ID (два режима: Seller и Service)"""
     product = await ProductService.get_by_id(db, product_id)
     if not product:
-        raise HTTPException(status_code=404, detail="Товар не найден")
-    return product
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Product not found"})
+        
+    if auth_context.mode == "seller":
+        if str(product.seller_id) != str(auth_context.seller_id):
+            raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Product not found"})
+        
+        # Build blocking_reason if present
+        blocking_reason = None
+        if product.blocking_reason_id and product.blocking_reason_title:
+            blocking_reason = BlockingReason(
+                id=product.blocking_reason_id,
+                title=product.blocking_reason_title,
+                comment=product.moderator_comment or ""
+            )
+            
+        # Pydantic will build the response
+        resp = ProductResponse.model_validate(product)
+        if blocking_reason:
+            resp.blocking_reason = blocking_reason
+        return resp
+    else:
+        # Service mode
+        return ProductPublicResponse.model_validate(product)
 
 @router.post("/", response_model=ProductResponse, status_code=status.HTTP_201_CREATED, summary="Создать товар")
 async def create_product(

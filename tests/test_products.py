@@ -374,3 +374,104 @@ async def test_deleted_product_not_in_seller_list(client: AsyncClient, setup_dat
     product_ids2 = [item["id"] for item in data2["items"]]
     assert str(product_id) in product_ids2
 
+@pytest.mark.asyncio
+async def test_get_moderated_product_returns_full_payload(client: AsyncClient, setup_data: dict, test_db: AsyncSession):
+    headers = {"Authorization": f"Bearer {setup_data['token']}"}
+    product_id = setup_data["product_id_mod"]
+    
+    # Add SKU
+    sku_id = uuid.uuid4()
+    await test_db.execute(text(
+        f"INSERT INTO skus (id, name, price, stock_quantity, product_id, images, characteristics, created_at, updated_at) "
+        f"VALUES ('{sku_id}', 'SKU 1', 1000, 0, '{product_id}', '[]', '[]', now(), now())"
+    ))
+    await test_db.flush()
+    
+    response = await client.get(f"/api/v1/products/{product_id}", headers=headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "MODERATED"
+    assert data["blocking_reason"] is None
+    assert data["field_reports"] == []
+    assert len(data["skus"]) == 1
+    assert "cost_price" in data["skus"][0]
+    assert data["blocked"] is False
+
+@pytest.mark.asyncio
+async def test_get_blocked_product_returns_blocking_reason_and_field_reports(client: AsyncClient, setup_data: dict, test_db: AsyncSession):
+    headers = {"Authorization": f"Bearer {setup_data['token']}"}
+    product_id = setup_data["product_id_blk"]
+    
+    reason_id = uuid.uuid4()
+    await test_db.execute(text(
+        f"UPDATE products SET blocking_reason_id = '{reason_id}', blocking_reason_title = 'Bad Title', "
+        f"moderator_comment = 'Comment', "
+        f"field_reports = '[{{\"field_name\": \"title\", \"sku_id\": null, \"comment\": \"Bad\"}}]' "
+        f"WHERE id = '{product_id}'"
+    ))
+    await test_db.flush()
+
+    response = await client.get(f"/api/v1/products/{product_id}", headers=headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "BLOCKED"
+    assert data["blocked"] is True
+    assert data["blocking_reason"] is not None
+    assert data["blocking_reason"]["id"] == str(reason_id)
+    assert data["blocking_reason"]["title"] == "Bad Title"
+    assert data["blocking_reason"]["comment"] == "Comment"
+    assert len(data["field_reports"]) == 1
+    assert data["field_reports"][0]["field_name"] == "title"
+
+@pytest.mark.asyncio
+async def test_get_others_product_returns_404(client: AsyncClient, setup_data: dict):
+    headers = {"Authorization": f"Bearer {setup_data['token']}"}
+    product_id = setup_data["product_id_other"] 
+    
+    response = await client.get(f"/api/v1/products/{product_id}", headers=headers)
+    assert response.status_code == 404
+    assert response.json()["code"] == "NOT_FOUND"
+
+@pytest.mark.asyncio
+async def test_get_nonexistent_returns_404(client: AsyncClient, setup_data: dict):
+    headers = {"Authorization": f"Bearer {setup_data['token']}"}
+    product_id = uuid.uuid4()
+    
+    response = await client.get(f"/api/v1/products/{product_id}", headers=headers)
+    assert response.status_code == 404
+    assert response.json()["code"] == "NOT_FOUND"
+
+@pytest.mark.asyncio
+async def test_get_product_with_service_key(client: AsyncClient, setup_data: dict, test_db: AsyncSession):
+    headers = {"X-Service-Key": settings.SERVICE_KEY}
+    product_id = setup_data["product_id_other"]
+    
+    # Add an SKU to make sure we can check SKU public schema
+    sku_id = uuid.uuid4()
+    await test_db.execute(text(
+        f"INSERT INTO skus (id, name, price, cost_price, discount, stock_quantity, active_quantity, reserved_quantity, product_id, images, characteristics, created_at, updated_at) "
+        f"VALUES ('{sku_id}', 'SKU 2', 2000, 1500, 100, 10, 10, 2, '{product_id}', '[]', '[]', now(), now())"
+    ))
+    await test_db.flush()
+    
+    response = await client.get(f"/api/v1/products/{product_id}", headers=headers)
+    assert response.status_code == 200
+    data = response.json()
+    
+    # Ensure it's the public schema (no seller-only fields in product)
+    assert "deleted" not in data
+    assert "blocked" not in data
+    assert "blocking_reason" not in data
+    assert "field_reports" not in data
+    
+    # Ensure it's the public schema for SKU (no cost_price, no reserved_quantity)
+    assert len(data["skus"]) == 1
+    sku = data["skus"][0]
+    assert "cost_price" not in sku
+    assert "reserved_quantity" not in sku
+    
+    # Ensure general fields are still present
+    assert sku["name"] == "SKU 2"
+    assert sku["price"] == 2000
+    assert sku["discount"] == 100
+    assert sku["active_quantity"] == 10

@@ -9,6 +9,7 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    container: python:3.12
 
     services:
       db:
@@ -17,8 +18,6 @@ jobs:
           POSTGRES_USER: db_user
           POSTGRES_PASSWORD: db_password
           POSTGRES_DB: b2b_db
-        ports:
-          - 5432:5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -31,17 +30,9 @@ jobs:
         env:
           MINIO_ROOT_USER: minio_admin
           MINIO_ROOT_PASSWORD: minio_password
-        ports:
-          - 9000:9000
 
     steps:
     - uses: actions/checkout@v4
-
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.12'
-        cache: 'pip'
 
     - name: Install dependencies
       run: |
@@ -50,7 +41,7 @@ jobs:
 
     - name: Create .env file for tests
       run: |
-        echo "POSTGRES_SERVER=localhost" >> .env
+        echo "POSTGRES_SERVER=db" >> .env
         echo "POSTGRES_PORT=5432" >> .env
         echo "POSTGRES_USER=db_user" >> .env
         echo "POSTGRES_PASSWORD=db_password" >> .env
@@ -63,6 +54,7 @@ jobs:
         echo "MINIO_SECRET_KEY=minio_password" >> .env
         echo "JWT_SECRET=test_secret_key" >> .env
         echo "JWT_ALGORITHM=HS256" >> .env
+        echo "SERVICE_KEY=secret-service-key" >> .env
         echo "B2B_TO_MOD_KEY=secret-b2b-mod-key" >> .env
         echo "B2B_TO_B2C_KEY=secret-b2b-b2c-key" >> .env
 
