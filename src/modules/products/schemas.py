@@ -4,7 +4,7 @@ from uuid import UUID
 from datetime import datetime
 from .models import ProductStatus
 from src.modules.common.schemas import PaginatedResponse
-from src.modules.skus.schemas import SKUResponse
+from src.modules.skus.schemas import SKUResponse, SKUPublicResponse
 
 class CategoryRef(BaseModel):
     id: UUID
@@ -59,6 +59,16 @@ class ProductUpdate(BaseModel):
     category_id: Optional[UUID] = Field(None, title="Category Id")
     characteristics: Optional[List[ProductCharacteristicCreate]] = Field(None, title="Characteristics")
 
+class FieldReport(BaseModel):
+    field_name: str
+    sku_id: Optional[UUID] = None
+    comment: str
+
+class BlockingReason(BaseModel):
+    id: UUID
+    title: str
+    comment: str
+
 class ProductResponse(BaseModel):
     id: UUID = Field(..., title="Id")
     seller_id: UUID = Field(..., title="Seller Id")
@@ -68,12 +78,29 @@ class ProductResponse(BaseModel):
     description: str = Field(..., title="Description")
     status: ProductStatus
     deleted: bool = Field(..., title="Deleted")
-    blocking_reason_id: Optional[UUID] = Field(None, title="Blocking Reason Id")
-    moderator_comment: Optional[str] = Field(None, title="Moderator Comment")
+    blocked: bool = Field(default=False, title="Blocked")
+    blocking_reason: Optional[BlockingReason] = Field(None, title="Blocking Reason")
+    field_reports: List[FieldReport] = Field(default=[], title="Field Reports")
     images: List[ProductImageResponse] = Field(..., title="Images")
     characteristics: List[ProductCharacteristicResponse] = Field(..., title="Characteristics")
     skus: List[SKUResponse] = Field(..., title="Skus")
     category: CategoryRef = Field(..., title="Category")
+    created_at: datetime = Field(..., title="Created At")
+    updated_at: datetime = Field(..., title="Updated At")
+
+    model_config = ConfigDict(from_attributes=True)
+
+class ProductPublicResponse(BaseModel):
+    id: UUID = Field(..., title="Id")
+    seller_id: UUID = Field(..., title="Seller Id")
+    category_id: UUID = Field(..., title="Category Id")
+    title: str = Field(..., title="Title")
+    slug: str = Field(..., title="Slug")
+    description: str = Field(..., title="Description")
+    status: ProductStatus
+    images: List[ProductImageResponse] = Field(..., title="Images")
+    characteristics: List[ProductCharacteristicResponse] = Field(..., title="Characteristics")
+    skus: List[SKUPublicResponse] = Field(..., title="Skus")
     created_at: datetime = Field(..., title="Created At")
     updated_at: datetime = Field(..., title="Updated At")
 

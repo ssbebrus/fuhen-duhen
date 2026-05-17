@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     
     MODERATION_URL: str = Field(default="http://localhost:8001")
     B2B_TO_MOD_KEY: str
+    SERVICE_KEY: str
     
     B2C_URL: str = Field(default="http://localhost:8002")
     B2B_TO_B2C_KEY: str

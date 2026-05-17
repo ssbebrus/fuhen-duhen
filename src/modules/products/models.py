@@ -29,8 +29,10 @@ class Product(Base, TimestampMixin):
     deleted: Mapped[bool] = mapped_column(default=False, server_default="false")
     blocking_reason_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=True)
     moderator_comment: Mapped[str] = mapped_column(Text, nullable=True)
+    blocking_reason_title: Mapped[str] = mapped_column(String(255), nullable=True)
     images: Mapped[list[dict]] = mapped_column(JSONB, default=list)  # Список {"url": "...", "ordering": 0}
     characteristics: Mapped[list[dict]] = mapped_column(JSONB, default=list)  # Список {"name": "...", "value": "..."}
+    field_reports: Mapped[list[dict]] = mapped_column(JSONB, default=list, server_default='[]')  # Список {"field_name": "...", "sku_id": "...", "comment": "..."}
     
     category_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("categories.id"))
     seller_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("sellers.id"), index=True, nullable=False)
@@ -41,3 +43,7 @@ class Product(Base, TimestampMixin):
 
     def __repr__(self) -> str:
         return f"<Product(id={self.id}, title={self.title}, status={self.status})>"
+
+    @property
+    def blocked(self) -> bool:
+        return self.status in (ProductStatus.BLOCKED, ProductStatus.HARD_BLOCKED)
