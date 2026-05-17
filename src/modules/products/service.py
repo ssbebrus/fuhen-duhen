@@ -22,10 +22,20 @@ def slugify(text: str) -> str:
 
 class ProductService:
     @staticmethod
-    async def get_all(db: AsyncSession, limit: int = 10, offset: int = 0) -> dict:
+    async def get_all(db: AsyncSession, limit: int = 10, offset: int = 0, seller_id: Optional[UUID] = None, include_deleted: bool = False) -> dict:
         """Получить список всех продуктов с пагинацией"""
         # Считаем общее количество
         count_query = select(func.count()).select_from(Product)
+        
+        conditions = []
+        if seller_id:
+            conditions.append(Product.seller_id == seller_id)
+        if not include_deleted:
+            conditions.append(Product.deleted == False)
+            
+        if conditions:
+            count_query = count_query.where(*conditions)
+            
         total_result = await db.execute(count_query)
         total = total_result.scalar() or 0
         
@@ -33,9 +43,13 @@ class ProductService:
         query = (
             select(Product)
             .options(selectinload(Product.category), selectinload(Product.skus))
-            .limit(limit)
-            .offset(offset)
         )
+        
+        if conditions:
+            query = query.where(*conditions)
+            
+        query = query.limit(limit).offset(offset)
+            
         result = await db.execute(query)
         items = list(result.scalars().all())
         
@@ -114,6 +128,28 @@ class ProductService:
             await db.commit()
             
         return await ProductService.get_by_id(db, product_id), status_changed
+
+    @staticmethod
+    async def delete(db: AsyncSession, product_id: UUID, seller_id: UUID) -> tuple[Product, list[str]]:
+        """Мягкое удаление продукта"""
+        product = await ProductService.get_by_id(db, product_id)
+        if not product:
+            raise ValueError("Product not found")
+            
+        if product.seller_id != seller_id:
+            raise ValueError("Product does not belong to the authenticated seller")
+            
+        if product.deleted:
+            raise ValueError("Product already deleted")
+            
+        sku_ids = [str(sku.id) for sku in product.skus]
+        
+        query = update(Product).where(Product.id == product_id).values(deleted=True)
+        await db.execute(query)
+        await db.commit()
+        await db.refresh(product)
+        
+        return product, sku_ids
 
     @staticmethod
     async def add_image(db: AsyncSession, product_id: UUID, image_in, seller_id: UUID) -> tuple[dict, bool, Product]:
