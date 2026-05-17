@@ -11,18 +11,20 @@ from .schemas import (
 from .service import ProductService
 from src.modules.auth.dependencies import get_current_seller
 from src.modules.auth.models import Seller
-from src.modules.common.events import send_moderation_event
+from src.modules.common.events import send_moderation_event, send_b2c_product_event
 
 router = APIRouter(prefix="/products", tags=["Products"])
 
-@router.get("/", response_model=PaginatedProductResponse, summary="Получить список всех товаров с пагинацией")
+@router.get("/", response_model=PaginatedProductResponse, summary="Получить список своих товаров с пагинацией")
 async def get_products(
     limit: int = 10, 
     offset: int = 0, 
-    db: AsyncSession = Depends(get_db)
+    include_deleted: bool = False,
+    db: AsyncSession = Depends(get_db),
+    seller: Seller = Depends(get_current_seller)
 ):
-    """Получить список всех товаров с пагинацией"""
-    return await ProductService.get_all(db, limit=limit, offset=offset)
+    """Получить список своих товаров с пагинацией"""
+    return await ProductService.get_all(db, limit=limit, offset=offset, seller_id=seller.id, include_deleted=include_deleted)
 
 @router.get("/{product_id}", response_model=ProductResponse, summary="Получить товар по ID")
 async def get_product(product_id: UUID, db: AsyncSession = Depends(get_db)):
@@ -61,10 +63,34 @@ async def update_product(
             raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "Cannot edit hard-blocked product"})
         raise
         
+        
     if status_changed:
         background_tasks.add_task(send_moderation_event, product.id, product.seller_id, "EDITED")
         
     return product
+
+@router.delete("/{product_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Мягкое удаление товара")
+async def delete_product(
+    product_id: UUID,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    seller: Seller = Depends(get_current_seller)
+):
+    """Мягкое удаление товара"""
+    try:
+        product, sku_ids = await ProductService.delete(db, product_id, seller.id)
+    except ValueError as e:
+        if str(e) == "Product not found":
+            raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Product not found"})
+        elif str(e) == "Product does not belong to the authenticated seller":
+            raise HTTPException(status_code=403, detail={"code": "NOT_OWNER", "message": "Product does not belong to the authenticated seller"})
+        elif str(e) == "Product already deleted":
+            raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": "Product already deleted"})
+        raise
+        
+    background_tasks.add_task(send_moderation_event, product.id, product.seller_id, "DELETED")
+    background_tasks.add_task(send_b2c_product_event, product.id, sku_ids, "PRODUCT_DELETED")
+    return None
 
 @router.post("/{product_id}/images", response_model=ProductImageResponse, status_code=status.HTTP_201_CREATED, summary="Добавить изображение к товару")
 async def add_product_image(

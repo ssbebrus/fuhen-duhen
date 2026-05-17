@@ -241,7 +241,8 @@ async def test_create_sku_other_seller_returns_403(client: AsyncClient, setup_da
     assert response.json()["code"] == "NOT_OWNER"
 
 @pytest.mark.asyncio
-async def test_reserves_preserved_after_sku_edit(client: AsyncClient, setup_data: dict, test_db: AsyncSession):
+@patch("src.modules.skus.router.send_moderation_event")
+async def test_reserves_preserved_after_sku_edit(mock_send, client: AsyncClient, setup_data: dict, test_db: AsyncSession):
     headers = {"Authorization": f"Bearer {setup_data['token']}"}
     payload = {
         "name": "SKU Res Updated",

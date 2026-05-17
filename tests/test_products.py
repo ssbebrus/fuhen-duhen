@@ -40,11 +40,11 @@ async def setup_data(test_db: AsyncSession):
     product_id_other = uuid.uuid4()
     
     await test_db.execute(text(
-        f"INSERT INTO products (id, title, slug, status, category_id, seller_id, images, characteristics, created_at, updated_at) "
-        f"VALUES ('{product_id_mod}', 'P Mod', 'p-mod', 'MODERATED', '{category_id}', '{seller_id}', '[]', '[]', now(), now()), "
-        f"('{product_id_blk}', 'P Blk', 'p-blk', 'BLOCKED', '{category_id}', '{seller_id}', '[]', '[]', now(), now()), "
-        f"('{product_id_hblk}', 'P Hblk', 'p-hblk', 'HARD_BLOCKED', '{category_id}', '{seller_id}', '[]', '[]', now(), now()), "
-        f"('{product_id_other}', 'P Oth', 'p-oth', 'CREATED', '{category_id}', '{seller_id_2}', '[]', '[]', now(), now())"
+        f"INSERT INTO products (id, title, slug, description, status, category_id, seller_id, images, characteristics, created_at, updated_at) "
+        f"VALUES ('{product_id_mod}', 'P Mod', 'p-mod', 'Desc', 'MODERATED', '{category_id}', '{seller_id}', '[]', '[]', now(), now()), "
+        f"('{product_id_blk}', 'P Blk', 'p-blk', 'Desc', 'BLOCKED', '{category_id}', '{seller_id}', '[]', '[]', now(), now()), "
+        f"('{product_id_hblk}', 'P Hblk', 'p-hblk', 'Desc', 'HARD_BLOCKED', '{category_id}', '{seller_id}', '[]', '[]', now(), now()), "
+        f"('{product_id_other}', 'P Oth', 'p-oth', 'Desc', 'CREATED', '{category_id}', '{seller_id_2}', '[]', '[]', now(), now())"
     ))
     
     # Мы НЕ делаем commit() здесь, так как conftest.py откатит транзакцию в конце теста.
@@ -285,3 +285,92 @@ async def test_delete_product_image(mock_send, client: AsyncClient, setup_data: 
     res = await test_db.execute(text(f"SELECT images FROM products WHERE id = '{product_id}'"))
     images = res.scalar()
     assert len(images) == 0
+
+@pytest.mark.asyncio
+@patch("src.modules.products.router.send_b2c_product_event")
+@patch("src.modules.products.router.send_moderation_event")
+async def test_delete_sets_deleted_true(mock_send_mod, mock_send_b2c, client: AsyncClient, setup_data: dict, test_db: AsyncSession):
+    headers = {"Authorization": f"Bearer {setup_data['token']}"}
+    product_id = setup_data["product_id_mod"]
+    
+    response = await client.delete(f"/api/v1/products/{product_id}", headers=headers)
+    assert response.status_code == 204
+    
+    res = await test_db.execute(text(f"SELECT deleted FROM products WHERE id = '{product_id}'"))
+    is_deleted = res.scalar()
+    assert is_deleted is True
+
+@pytest.mark.asyncio
+@patch("src.modules.products.router.send_b2c_product_event")
+@patch("src.modules.products.router.send_moderation_event")
+async def test_delete_emits_event_to_moderation(mock_send_mod, mock_send_b2c, client: AsyncClient, setup_data: dict):
+    headers = {"Authorization": f"Bearer {setup_data['token']}"}
+    product_id = setup_data["product_id_blk"]
+    
+    response = await client.delete(f"/api/v1/products/{product_id}", headers=headers)
+    assert response.status_code == 204
+    
+    mock_send_mod.assert_called_once_with(product_id, setup_data["seller_id"], "DELETED")
+
+@pytest.mark.asyncio
+@patch("src.modules.products.router.send_b2c_product_event")
+@patch("src.modules.products.router.send_moderation_event")
+async def test_delete_emits_product_deleted_to_b2c(mock_send_mod, mock_send_b2c, client: AsyncClient, setup_data: dict, test_db: AsyncSession):
+    product_id = setup_data["product_id_hblk"]
+    sku_id = uuid.uuid4()
+    await test_db.execute(text(
+        f"INSERT INTO skus (id, name, price, stock_quantity, product_id, images, characteristics, created_at, updated_at) "
+        f"VALUES ('{sku_id}', 'SKU 1', 1000, 0, '{product_id}', '[]', '[]', now(), now())"
+    ))
+    await test_db.flush()
+
+    headers = {"Authorization": f"Bearer {setup_data['token']}"}
+    
+    response = await client.delete(f"/api/v1/products/{product_id}", headers=headers)
+    assert response.status_code == 204
+    
+    mock_send_b2c.assert_called_once_with(product_id, [str(sku_id)], "PRODUCT_DELETED")
+
+@pytest.mark.asyncio
+async def test_delete_already_deleted_returns_400(client: AsyncClient, setup_data: dict, test_db: AsyncSession):
+    headers = {"Authorization": f"Bearer {setup_data['token']}"}
+    product_id = setup_data["product_id_mod"]
+    
+    await test_db.execute(text(f"UPDATE products SET deleted = true WHERE id = '{product_id}'"))
+    await test_db.flush()
+    
+    response = await client.delete(f"/api/v1/products/{product_id}", headers=headers)
+    assert response.status_code == 400
+    assert response.json()["code"] == "INVALID_REQUEST"
+
+@pytest.mark.asyncio
+async def test_delete_others_product_returns_403(client: AsyncClient, setup_data: dict):
+    headers = {"Authorization": f"Bearer {setup_data['token']}"}
+    product_id = setup_data["product_id_other"] 
+    
+    response = await client.delete(f"/api/v1/products/{product_id}", headers=headers)
+    assert response.status_code == 403
+    assert response.json()["code"] == "NOT_OWNER"
+
+@pytest.mark.asyncio
+async def test_deleted_product_not_in_seller_list(client: AsyncClient, setup_data: dict, test_db: AsyncSession):
+    headers = {"Authorization": f"Bearer {setup_data['token']}"}
+    product_id = setup_data["product_id_mod"]
+    
+    await test_db.execute(text(f"UPDATE products SET deleted = true WHERE id = '{product_id}'"))
+    await test_db.flush()
+    
+    response = await client.get("/api/v1/products/", headers=headers)
+    assert response.status_code == 200
+    
+    data = response.json()
+    items = data["items"]
+    
+    product_ids = [item["id"] for item in items]
+    assert str(product_id) not in product_ids
+    
+    response2 = await client.get("/api/v1/products/?include_deleted=true", headers=headers)
+    data2 = response2.json()
+    product_ids2 = [item["id"] for item in data2["items"]]
+    assert str(product_id) in product_ids2
+

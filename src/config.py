@@ -25,7 +25,10 @@ class Settings(BaseSettings):
     MINIO_URL_EXTERNAL: str = Field(default="http://localhost:9000")
     
     MODERATION_URL: str = Field(default="http://localhost:8001")
-    B2B_TO_MOD_KEY: str = Field(default="secret-b2b-mod-key")
+    B2B_TO_MOD_KEY: str
+    
+    B2C_URL: str = Field(default="http://localhost:8002")
+    B2B_TO_B2C_KEY: str
     
     JWT_SECRET: str
     JWT_ALGORITHM: str = Field(default="HS256")
