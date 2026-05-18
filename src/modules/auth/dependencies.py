@@ -9,7 +9,7 @@ from typing import Optional
 from src.db.database import get_db
 from src.config import settings
 from .service import AuthService
-from .models import Seller
+from .models import Seller, WarehouseOperator
 
 security = HTTPBearer()
 
@@ -40,6 +40,41 @@ async def get_current_seller(auth: HTTPAuthorizationCredentials = Depends(securi
     if seller is None:
         raise credentials_exception
     return seller
+
+async def get_current_operator(auth: HTTPAuthorizationCredentials = Depends(security), db: AsyncSession = Depends(get_db)) -> WarehouseOperator:
+    token = auth.credentials
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail={"code": "UNAUTHORIZED", "message": "Could not validate credentials"},
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    forbidden_exception = HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail={"code": "FORBIDDEN", "message": "Only warehouse operators are authorized to perform this action"},
+    )
+    try:
+        payload = jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
+        operator_id: str = payload.get("sub")
+        role: str = payload.get("role")
+        if operator_id is None:
+            raise credentials_exception
+        if role != "operator":
+            raise forbidden_exception
+    except jwt.PyJWTError:
+        raise credentials_exception
+        
+    try:
+        operator_uuid = UUID(operator_id)
+    except ValueError:
+        raise credentials_exception
+
+    from sqlalchemy import select
+    res = await db.execute(select(WarehouseOperator).where(WarehouseOperator.id == operator_uuid))
+    operator = res.scalar_one_or_none()
+    
+    if operator is None:
+        raise credentials_exception
+    return operator
 
 class AuthContext(BaseModel):
     mode: str  # "seller" or "service"

@@ -18,3 +18,15 @@ class Seller(Base, TimestampMixin):
 
     def __repr__(self) -> str:
         return f"<Seller(id={self.id}, email={self.email}, company={self.company_name})>"
+
+class WarehouseOperator(Base, TimestampMixin):
+    __tablename__ = "warehouse_operators"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
+    first_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    last_name: Mapped[str] = mapped_column(String(100), nullable=False)
+
+    def __repr__(self) -> str:
+        return f"<WarehouseOperator(id={self.id}, email={self.email})>"
