@@ -7,8 +7,8 @@ from fastapi import HTTPException, status
 from typing import Optional
 
 from src.config import settings
-from .models import Seller
-from .schemas import SellerCreate
+from .models import Seller, WarehouseOperator
+from .schemas import SellerCreate, OperatorCreate
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -60,3 +60,29 @@ class AuthService:
         await db.commit()
         await db.refresh(db_seller)
         return db_seller
+
+    @staticmethod
+    async def get_operator_by_email(db: AsyncSession, email: str) -> Optional[WarehouseOperator]:
+        result = await db.execute(select(WarehouseOperator).where(WarehouseOperator.email == email))
+        return result.scalar_one_or_none()
+
+    @staticmethod
+    async def create_operator(db: AsyncSession, operator_in: OperatorCreate) -> WarehouseOperator:
+        existing = await AuthService.get_operator_by_email(db, operator_in.email)
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email already registered"
+            )
+            
+        hashed_password = AuthService.get_password_hash(operator_in.password)
+        db_operator = WarehouseOperator(
+            email=operator_in.email,
+            hashed_password=hashed_password,
+            first_name=operator_in.first_name,
+            last_name=operator_in.last_name
+        )
+        db.add(db_operator)
+        await db.commit()
+        await db.refresh(db_operator)
+        return db_operator

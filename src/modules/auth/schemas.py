@@ -22,6 +22,20 @@ class SellerResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+class OperatorCreate(BaseModel):
+    email: EmailStr
+    password: str
+    first_name: str
+    last_name: str
+
+class OperatorResponse(BaseModel):
+    id: UUID
+    email: str
+    first_name: str
+    last_name: str
+
+    model_config = ConfigDict(from_attributes=True)
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str
