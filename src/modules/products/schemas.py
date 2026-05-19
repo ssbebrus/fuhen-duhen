@@ -94,6 +94,7 @@ class ProductPublicResponse(BaseModel):
     id: UUID = Field(..., title="Id")
     seller_id: UUID = Field(..., title="Seller Id")
     category_id: UUID = Field(..., title="Category Id")
+    category: CategoryRef = Field(..., title="Category")
     title: str = Field(..., title="Title")
     slug: str = Field(..., title="Slug")
     description: str = Field(..., title="Description")
@@ -106,5 +107,28 @@ class ProductPublicResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+class ProductPublicShortResponse(BaseModel):
+    id: UUID = Field(..., title="Id")
+    title: str = Field(..., title="Title")
+    slug: str = Field(..., title="Slug")
+    status: ProductStatus
+    category_id: UUID = Field(..., title="Category Id")
+    min_price: int = Field(..., title="Minimum Price")
+    cover_image: Optional[str] = Field(None, title="Cover Image")
+    created_at: datetime = Field(..., title="Created At")
+
+    model_config = ConfigDict(from_attributes=True)
+
+class ProductPublicPaginatedResponse(BaseModel):
+    items: List[ProductPublicShortResponse] = Field(..., title="Items")
+    total_count: int = Field(..., title="Total Count")
+    limit: int = Field(..., title="Limit")
+    offset: int = Field(..., title="Offset")
+
+    model_config = ConfigDict(from_attributes=True)
+
 class PaginatedProductResponse(PaginatedResponse[ProductResponse]):
     pass
+
+class ProductBatchRequest(BaseModel):
+    product_ids: List[UUID]
