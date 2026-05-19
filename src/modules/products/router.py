@@ -1,5 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, exists
+from sqlalchemy.orm import selectinload
 from typing import List
 from uuid import UUID
 
@@ -189,3 +191,103 @@ async def delete_product_image(
     if status_changed:
         background_tasks.add_task(send_moderation_event, product.id, product.seller_id, "EDITED")
     return None
+
+from fastapi import Header
+from typing import Optional
+from .schemas import (
+    ProductPublicShortResponse, ProductPublicPaginatedResponse, ProductBatchRequest
+)
+from src.modules.skus.schemas import SKUPublicResponse
+from src.config import settings
+from src.modules.products.models import Product, ProductStatus
+
+async def verify_service_key(x_service_key: Optional[str] = Header(None, alias="X-Service-Key")) -> str:
+    if not x_service_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"code": "UNAUTHORIZED", "message": "X-Service-Key header is missing"}
+        )
+    if x_service_key != settings.SERVICE_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"code": "UNAUTHORIZED", "message": "Invalid X-Service-Key"}
+        )
+    return x_service_key
+
+public_router = APIRouter(prefix="/public", tags=["Public Catalog"])
+
+@public_router.get("/products", response_model=ProductPublicPaginatedResponse, summary="Витрина — список товаров")
+async def list_public_products(
+    category_id: Optional[UUID] = None,
+    search: Optional[str] = None,
+    sort: Optional[str] = None,
+    ids: Optional[str] = None,
+    limit: int = 20,
+    offset: int = 0,
+    db: AsyncSession = Depends(get_db),
+    _service_key: str = Depends(verify_service_key)
+):
+    """Витрина — только MODERATED, не deleted, active_quantity > 0"""
+    data = await ProductService.get_public_catalog(
+        db, limit=limit, offset=offset, category_id=category_id, search=search, sort=sort, ids=ids
+    )
+    return ProductPublicPaginatedResponse.model_validate(data)
+
+@public_router.post("/products/batch", response_model=List[ProductPublicResponse], summary="Batch-получение карточек по списку product_id")
+async def batch_public_products(
+    request: ProductBatchRequest,
+    db: AsyncSession = Depends(get_db),
+    _service_key: str = Depends(verify_service_key)
+):
+    """Batch-получение карточек по списку product_id (только MODERATED, не deleted, active_quantity > 0)"""
+    products = await ProductService.batch_get_public_products(db, request.product_ids)
+    return [ProductPublicResponse.model_validate(p) for p in products]
+
+@public_router.get("/products/{product_id}", response_model=ProductPublicResponse, summary="Карточка товара для витрины")
+async def get_public_product(
+    product_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _service_key: str = Depends(verify_service_key)
+):
+    """Карточка товара для витрины (только MODERATED, не deleted, active_quantity > 0)"""
+    product = await ProductService.get_public_product_by_id(db, product_id)
+    if not product:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "NOT_FOUND", "message": "Product not found"}
+        )
+    return ProductPublicResponse.model_validate(product)
+
+@public_router.get("/products/{product_id}/similar", response_model=List[ProductPublicShortResponse], summary="Похожие товары")
+async def get_public_similar_products(
+    product_id: UUID,
+    limit: int = 10,
+    db: AsyncSession = Depends(get_db),
+    _service_key: str = Depends(verify_service_key)
+):
+    """Похожие товары (случайная выборка из той же категории)"""
+    product = await ProductService.get_by_id(db, product_id)
+    if not product or product.deleted or product.status != ProductStatus.MODERATED:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "NOT_FOUND", "message": "Product not found"}
+        )
+    similar = await ProductService.get_public_similar_products(db, product_id, limit)
+    return similar
+
+@public_router.get("/skus/{sku_id}", response_model=SKUPublicResponse, summary="SKU для витрины")
+async def get_public_sku(
+    sku_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _service_key: str = Depends(verify_service_key)
+):
+    """SKU для витрины (без cost_price, reserved_quantity, только MODERATED и активные)"""
+    from src.modules.skus.service import SKUService
+
+    sku = await SKUService.get_public_sku_by_id(db, sku_id)
+    if not sku:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "NOT_FOUND", "message": "SKU not found"}
+        )
+    return SKUPublicResponse.model_validate(sku)

@@ -181,3 +181,19 @@ class SKUService:
         await db.execute(update(SKU).where(SKU.id == sku.id).values(images=images))
         await db.commit()
         return status_changed, product
+
+    @staticmethod
+    async def get_public_sku_by_id(db: AsyncSession, sku_id: UUID) -> Optional[SKU]:
+        """Получить SKU для витрины B2C (только если товар MODERATED, не удален, и active_quantity > 0)"""
+        query = (
+            select(SKU)
+            .join(Product, SKU.product_id == Product.id)
+            .where(
+                SKU.id == sku_id,
+                Product.status == ProductStatus.MODERATED,
+                Product.deleted == False,
+                SKU.active_quantity > 0
+            )
+        )
+        result = await db.execute(query)
+        return result.scalar_one_or_none()
