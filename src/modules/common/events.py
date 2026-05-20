@@ -80,3 +80,42 @@ async def send_b2c_product_event(product_id: UUID, sku_ids: list[str], event_typ
                 logger.error(f"Unexpected error sending B2C event: {e}")
                 break
 
+
+async def send_b2c_sku_out_of_stock_event(product_id: UUID, sku_id: UUID):
+    event_type = "SKU_OUT_OF_STOCK"
+    idemp_key = str(uuid.uuid5(uuid.NAMESPACE_OID, f"{sku_id}_{event_type}_b2c"))
+    event_data = {
+        "idempotency_key": idemp_key,
+        "event": event_type,
+        "product_id": str(product_id),
+        "sku_id": str(sku_id),
+        "date": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    }
+    url = f"{settings.B2C_URL}/api/v1/events/product"
+    headers = {"X-Service-Key": settings.B2B_TO_B2C_KEY}
+    
+    max_retries = 5
+    base_delay = 1.0
+    
+    async with httpx.AsyncClient() as client:
+        for attempt in range(max_retries):
+            try:
+                response = await client.post(url, json=event_data, headers=headers, timeout=5.0)
+                response.raise_for_status()
+                logger.info(f"Successfully sent B2C event {event_type} for sku {sku_id}")
+                return
+            except (httpx.HTTPError, httpx.NetworkError) as e:
+                delay = base_delay * (2 ** attempt)
+                logger.warning(
+                    f"Attempt {attempt + 1}/{max_retries} failed for sku {sku_id} to B2C: {e}. "
+                    f"Retrying in {delay}s..."
+                )
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(delay)
+                else:
+                    logger.error(f"Failed to send B2C event after {max_retries} attempts: {e}")
+            except Exception as e:
+                logger.error(f"Unexpected error sending B2C event: {e}")
+                break
+
+
