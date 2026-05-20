@@ -6,5 +6,6 @@ from src.modules.categories.models import Category
 from src.modules.skus.models import SKU
 from src.modules.auth.models import Seller, WarehouseOperator
 from src.modules.invoices.models import Invoice, InvoiceItem
+from src.modules.inventory.models import ReserveOperation
 
 # Иначе alembic --autogenerate не сможет найти таблицы
