@@ -123,6 +123,9 @@ async def test_missing_category_returns_400(client: AsyncClient, setup_data: dic
     
     response = await client.post("/api/v1/products/", json=payload, headers=headers)
     assert response.status_code == 400
+    data = response.json()
+    assert data["code"] == "VALIDATION_ERROR"
+    assert "category_id" in data["message"]
 
 @pytest.mark.asyncio
 async def test_missing_description_returns_400(client: AsyncClient, setup_data: dict):

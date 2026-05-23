@@ -11,15 +11,22 @@ from src.config import settings
 from .service import AuthService
 from .models import Seller, WarehouseOperator
 
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
 
-async def get_current_seller(auth: HTTPAuthorizationCredentials = Depends(security), db: AsyncSession = Depends(get_db)) -> Seller:
-    token = auth.credentials
+# US-B2B-01 ошибка исправлена
+async def get_current_seller(auth: Optional[HTTPAuthorizationCredentials] = Depends(security), db: AsyncSession = Depends(get_db)) -> Seller:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
+        detail={"code": "UNAUTHORIZED", "message": "Could not validate credentials"},
         headers={"WWW-Authenticate": "Bearer"},
     )
+    if auth is None or not auth.credentials:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"code": "UNAUTHORIZED", "message": "Not authenticated"},
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    token = auth.credentials
     try:
         payload = jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
         seller_id: str = payload.get("sub")
@@ -41,8 +48,7 @@ async def get_current_seller(auth: HTTPAuthorizationCredentials = Depends(securi
         raise credentials_exception
     return seller
 
-async def get_current_operator(auth: HTTPAuthorizationCredentials = Depends(security), db: AsyncSession = Depends(get_db)) -> WarehouseOperator:
-    token = auth.credentials
+async def get_current_operator(auth: Optional[HTTPAuthorizationCredentials] = Depends(security), db: AsyncSession = Depends(get_db)) -> WarehouseOperator:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail={"code": "UNAUTHORIZED", "message": "Could not validate credentials"},
@@ -52,6 +58,13 @@ async def get_current_operator(auth: HTTPAuthorizationCredentials = Depends(secu
         status_code=status.HTTP_403_FORBIDDEN,
         detail={"code": "FORBIDDEN", "message": "Only warehouse operators are authorized to perform this action"},
     )
+    if auth is None or not auth.credentials:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"code": "UNAUTHORIZED", "message": "Not authenticated"},
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    token = auth.credentials
     try:
         payload = jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
         operator_id: str = payload.get("sub")
@@ -84,7 +97,7 @@ async def get_auth_context(request: Request, db: AsyncSession = Depends(get_db))
     service_key = request.headers.get("X-Service-Key")
     if service_key:
         if service_key != settings.SERVICE_KEY:
-            raise HTTPException(status_code=401, detail="Invalid X-Service-Key")
+            raise HTTPException(status_code=401, detail={"code": "UNAUTHORIZED", "message": "Invalid X-Service-Key"})
         return AuthContext(mode="service")
 
     # If no X-Service-Key, try JWT auth
@@ -92,7 +105,7 @@ async def get_auth_context(request: Request, db: AsyncSession = Depends(get_db))
     if not auth_header or not auth_header.startswith("Bearer "):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
+            detail={"code": "UNAUTHORIZED", "message": "Not authenticated"},
             headers={"WWW-Authenticate": "Bearer"},
         )
     

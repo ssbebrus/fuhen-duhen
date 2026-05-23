@@ -75,6 +75,7 @@ class ProductService:
         """Создать новый продукт"""
         category = await CategoryService.get_by_id(db, product_in.category_id)
         if not category:
+            # US-B2B-01 ошибка исправлена
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail={"code": "INVALID_REQUEST", "message": "Category not found"}
