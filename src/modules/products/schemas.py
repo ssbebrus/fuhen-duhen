@@ -78,9 +78,8 @@ class ProductResponse(BaseModel):
     description: str = Field(..., title="Description")
     status: ProductStatus
     deleted: bool = Field(..., title="Deleted")
-    blocked: bool = Field(default=False, title="Blocked")
-    blocking_reason: Optional[BlockingReason] = Field(None, title="Blocking Reason")
-    field_reports: List[FieldReport] = Field(default=[], title="Field Reports")
+    blocking_reason_id: Optional[UUID] = Field(None, title="Blocking Reason Id")
+    moderator_comment: Optional[str] = Field(None, title="Moderator Comment")
     images: List[ProductImageResponse] = Field(..., title="Images")
     characteristics: List[ProductCharacteristicResponse] = Field(..., title="Characteristics")
     skus: List[SKUResponse] = Field(..., title="Skus")
@@ -89,6 +88,11 @@ class ProductResponse(BaseModel):
     updated_at: datetime = Field(..., title="Updated At")
 
     model_config = ConfigDict(from_attributes=True)
+
+class ProductDetailResponse(ProductResponse):
+    blocked: bool = Field(default=False, title="Blocked")
+    blocking_reason: Optional[BlockingReason] = Field(None, title="Blocking Reason")
+    field_reports: List[FieldReport] = Field(default=[], title="Field Reports")
 
 class ProductPublicResponse(BaseModel):
     id: UUID = Field(..., title="Id")

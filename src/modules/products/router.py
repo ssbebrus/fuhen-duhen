@@ -9,7 +9,7 @@ from src.db.database import get_db
 from .schemas import (
     ProductCreate, ProductUpdate, ProductResponse, PaginatedProductResponse,
     ProductImageCreateRequest, ProductImageUpdateRequest, ProductImageResponse,
-    ProductPublicResponse, BlockingReason
+    ProductPublicResponse, BlockingReason, ProductDetailResponse
 )
 from .service import ProductService
 from src.modules.auth.dependencies import get_current_seller, get_auth_context, AuthContext
@@ -30,7 +30,7 @@ async def get_products(
     """Получить список своих товаров с пагинацией"""
     return await ProductService.get_all(db, limit=limit, offset=offset, seller_id=seller.id, include_deleted=include_deleted)
 
-@router.get("/{product_id}", response_model=Union[ProductResponse, ProductPublicResponse], summary="Получить товар по ID")
+@router.get("/{product_id}", response_model=Union[ProductDetailResponse, ProductPublicResponse], summary="Получить товар по ID")
 async def get_product(
     product_id: UUID, 
     auth_context: AuthContext = Depends(get_auth_context),
@@ -55,7 +55,7 @@ async def get_product(
             )
             
         # Pydantic will build the response
-        resp = ProductResponse.model_validate(product)
+        resp = ProductDetailResponse.model_validate(product)
         if blocking_reason:
             resp.blocking_reason = blocking_reason
         return resp
