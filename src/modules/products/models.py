@@ -1,6 +1,6 @@
 import uuid
 import enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import String, Text, ForeignKey, Enum
 from sqlalchemy.dialects.postgresql import UUID, JSONB
@@ -47,3 +47,27 @@ class Product(Base, TimestampMixin):
     @property
     def blocked(self) -> bool:
         return self.status in (ProductStatus.BLOCKED, ProductStatus.HARD_BLOCKED)
+
+    @property
+    def skus_count(self) -> int:
+        return len(self.skus) if "skus" in self.__dict__ else 0
+
+    @property
+    def total_active_quantity(self) -> int:
+        if "skus" in self.__dict__:
+            return sum(sku.active_quantity for sku in self.skus)
+        return 0
+
+    @property
+    def min_price(self) -> Optional[int]:
+        if "skus" in self.__dict__ and self.skus:
+            return min(sku.price for sku in self.skus)
+        return None
+
+    @property
+    def cover_image(self) -> Optional[str]:
+        if self.images:
+            sorted_imgs = sorted(self.images, key=lambda x: x.get("ordering", 0))
+            if sorted_imgs:
+                return sorted_imgs[0].get("url")
+        return None

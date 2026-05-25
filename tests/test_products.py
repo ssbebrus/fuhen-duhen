@@ -478,3 +478,112 @@ async def test_get_product_with_service_key(client: AsyncClient, setup_data: dic
     assert sku["price"] == 2000
     assert sku["discount"] == 100
     assert sku["active_quantity"] == 10
+
+
+@pytest.mark.asyncio
+async def test_list_returns_only_own_products(client: AsyncClient, setup_data: dict, test_db: AsyncSession):
+    # Добавим SKU для товара, чтобы проверить skus_count и total_active_quantity
+    product_id = setup_data["product_id_mod"]
+    sku_id = uuid.uuid4()
+    await test_db.execute(text(
+        f"INSERT INTO skus (id, name, price, cost_price, discount, stock_quantity, active_quantity, reserved_quantity, product_id, images, characteristics, created_at, updated_at) "
+        f"VALUES ('{sku_id}', 'SKU 1', 1000, 800, 0, 10, 5, 0, '{product_id}', '[]', '[]', now(), now())"
+    ))
+    await test_db.flush()
+
+    headers = {"Authorization": f"Bearer {setup_data['token']}"}
+    response = await client.get("/api/v1/products/", headers=headers)
+    assert response.status_code == 200
+    data = response.json()
+    items = data["items"]
+    
+    # Должны быть только товары первого продавца
+    product_ids = [item["id"] for item in items]
+    assert str(setup_data["product_id_mod"]) in product_ids
+    assert str(setup_data["product_id_blk"]) in product_ids
+    assert str(setup_data["product_id_hblk"]) in product_ids
+    assert str(setup_data["product_id_other"]) not in product_ids
+
+    # Проверим skus_count и total_active_quantity для product_id_mod
+    mod_item = next(item for item in items if item["id"] == str(product_id))
+    assert mod_item["skus_count"] == 1
+    assert mod_item["total_active_quantity"] == 5
+
+
+@pytest.mark.asyncio
+async def test_idor_query_param_seller_id_ignored(client: AsyncClient, setup_data: dict):
+    headers = {"Authorization": f"Bearer {setup_data['token']}"}
+    # Пытаемся передать seller_id другого продавца
+    other_seller_id = setup_data["product_id_other"]
+    response = await client.get(f"/api/v1/products/?seller_id={other_seller_id}", headers=headers)
+    assert response.status_code == 200
+    data = response.json()
+    items = data["items"]
+    
+    # Должны получить только СВОИ товары, но не чужие
+    product_ids = [item["id"] for item in items]
+    assert str(setup_data["product_id_mod"]) in product_ids
+    assert str(setup_data["product_id_other"]) not in product_ids
+
+
+@pytest.mark.asyncio
+async def test_deleted_products_visible_with_deleted_flag(client: AsyncClient, setup_data: dict, test_db: AsyncSession):
+    product_id = setup_data["product_id_mod"]
+    await test_db.execute(text(f"UPDATE products SET deleted = true WHERE id = '{product_id}'"))
+    await test_db.flush()
+
+    headers = {"Authorization": f"Bearer {setup_data['token']}"}
+    # По умолчанию удаленные не видны
+    response = await client.get("/api/v1/products/", headers=headers)
+    assert response.status_code == 200
+    items = response.json()["items"]
+    assert str(product_id) not in [item["id"] for item in items]
+
+    # С флагом include_deleted=true видны
+    response = await client.get("/api/v1/products/?include_deleted=true", headers=headers)
+    assert response.status_code == 200
+    items = response.json()["items"]
+    deleted_item = next(item for item in items if item["id"] == str(product_id))
+    assert deleted_item["deleted"] is True
+
+
+@pytest.mark.asyncio
+async def test_status_filter_works_correctly(client: AsyncClient, setup_data: dict):
+    headers = {"Authorization": f"Bearer {setup_data['token']}"}
+    response = await client.get("/api/v1/products/?status=BLOCKED", headers=headers)
+    assert response.status_code == 200
+    items = response.json()["items"]
+    
+    # Должен вернуться только товар со статусом BLOCKED
+    for item in items:
+        assert item["status"] == "BLOCKED"
+    
+    product_ids = [item["id"] for item in items]
+    assert str(setup_data["product_id_blk"]) in product_ids
+    assert str(setup_data["product_id_mod"]) not in product_ids
+
+
+@pytest.mark.asyncio
+async def test_search_by_title_case_insensitive(client: AsyncClient, setup_data: dict, test_db: AsyncSession):
+    # Создадим пару товаров с похожими названиями
+    seller_id = setup_data["seller_id"]
+    category_id = setup_data["category_id"]
+    p1 = uuid.uuid4()
+    p2 = uuid.uuid4()
+    await test_db.execute(text(
+        f"INSERT INTO products (id, title, slug, description, status, category_id, seller_id, images, characteristics, created_at, updated_at) "
+        f"VALUES ('{p1}', 'MacBook Pro 16', 'macbook-16', 'Desc', 'MODERATED', '{category_id}', '{seller_id}', '[]', '[]', now(), now()), "
+        f"('{p2}', 'macbook air M2', 'macbook-air', 'Desc', 'MODERATED', '{category_id}', '{seller_id}', '[]', '[]', now(), now())"
+    ))
+    await test_db.flush()
+
+    headers = {"Authorization": f"Bearer {setup_data['token']}"}
+    # Ищем по mAcBoOk
+    response = await client.get("/api/v1/products/?search=mAcBoOk", headers=headers)
+    assert response.status_code == 200
+    items = response.json()["items"]
+    
+    product_ids = [item["id"] for item in items]
+    assert str(p1) in product_ids
+    assert str(p2) in product_ids
+    assert len(items) == 2
