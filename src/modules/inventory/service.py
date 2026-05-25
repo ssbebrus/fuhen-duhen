@@ -150,7 +150,7 @@ class InventoryService:
         request: InventoryOrderRequest
     ) -> Dict[str, Any]:
         # 1. Проверяем, не была ли эта транзакция уже отменена (идемпотентность по order_id)
-        stmt_op = select(ReserveOperation).where(ReserveOperation.order_id == request.order_id)
+        stmt_op = select(ReserveOperation).where(ReserveOperation.order_id == request.order_id).with_for_update()
         res_ops = await db.execute(stmt_op)
         existing_ops = res_ops.scalars().all()
 
@@ -223,7 +223,7 @@ class InventoryService:
         request: InventoryOrderRequest
     ) -> Dict[str, Any]:
         # 1. Проверяем, не была ли эта транзакция уже выполнена (идемпотентность по order_id)
-        stmt_op = select(ReserveOperation).where(ReserveOperation.order_id == request.order_id)
+        stmt_op = select(ReserveOperation).where(ReserveOperation.order_id == request.order_id).with_for_update()
         res_ops = await db.execute(stmt_op)
         existing_ops = res_ops.scalars().all()
 

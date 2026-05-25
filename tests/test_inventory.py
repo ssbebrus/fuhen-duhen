@@ -435,42 +435,6 @@ async def test_fulfill_idempotency(client: AsyncClient, setup_inventory_data: di
     assert stock[2] == 0
 
 
-@pytest.mark.asyncio
-async def test_fulfill_decreases_reserved_quantity(client: AsyncClient, setup_inventory_data: dict, test_db: AsyncSession):
-    headers = {"X-Service-Key": settings.SERVICE_KEY}
-    idempotency_key = uuid.uuid4()
-    order_id = uuid.uuid4()
-
-    reserve_payload = {
-        "idempotency_key": str(idempotency_key),
-        "order_id": str(order_id),
-        "items": [
-            {"sku_id": str(setup_inventory_data["sku_id_1"]), "quantity": 4}
-        ]
-    }
-
-    # 1. Reserve
-    response_reserve = await client.post("/api/v1/inventory/reserve", json=reserve_payload, headers=headers)
-    assert response_reserve.status_code == 200
-
-    # 2. Fulfill
-    fulfill_payload = {
-        "order_id": str(order_id),
-        "items": [
-            {"sku_id": str(setup_inventory_data["sku_id_1"]), "quantity": 4}
-        ]
-    }
-
-    response_fulfill = await client.post("/api/v1/inventory/fulfill", json=fulfill_payload, headers=headers)
-    assert response_fulfill.status_code == 200
-    assert response_fulfill.json()["ok"] is True
-
-    # 3. Check that reserved_quantity is decreased (should be 0) and stock_quantity is decreased (should be 6)
-    res_after = await test_db.execute(text(f"SELECT stock_quantity, active_quantity, reserved_quantity FROM skus WHERE id = '{setup_inventory_data['sku_id_1']}'"))
-    stock_after = res_after.fetchone()
-    assert stock_after[2] == 0  # reserved_quantity decreased to 0
-    assert stock_after[0] == 6  # stock_quantity decreased to 6
-
 
 @pytest.mark.asyncio
 async def test_active_quantity_unchanged(client: AsyncClient, setup_inventory_data: dict, test_db: AsyncSession):
@@ -505,45 +469,6 @@ async def test_active_quantity_unchanged(client: AsyncClient, setup_inventory_da
     stock_after = res_after.fetchone()
     assert stock_after[1] == 7  # active_quantity remains 7
 
-
-@pytest.mark.asyncio
-async def test_idempotent_fulfill_no_double_deduction(client: AsyncClient, setup_inventory_data: dict, test_db: AsyncSession):
-    headers = {"X-Service-Key": settings.SERVICE_KEY}
-    idempotency_key = uuid.uuid4()
-    order_id = uuid.uuid4()
-
-    reserve_payload = {
-        "idempotency_key": str(idempotency_key),
-        "order_id": str(order_id),
-        "items": [
-            {"sku_id": str(setup_inventory_data["sku_id_1"]), "quantity": 4}
-        ]
-    }
-
-    # 1. Reserve
-    await client.post("/api/v1/inventory/reserve", json=reserve_payload, headers=headers)
-
-    fulfill_payload = {
-        "order_id": str(order_id),
-        "items": [
-            {"sku_id": str(setup_inventory_data["sku_id_1"]), "quantity": 4}
-        ]
-    }
-
-    # First fulfill call
-    response_1 = await client.post("/api/v1/inventory/fulfill", json=fulfill_payload, headers=headers)
-    assert response_1.status_code == 200
-
-    # Second fulfill call (should be idempotent, no changes)
-    response_2 = await client.post("/api/v1/inventory/fulfill", json=fulfill_payload, headers=headers)
-    assert response_2.status_code == 200
-    assert response_1.json() == response_2.json()
-
-    # Check quantities: stock should be 6, reserved should be 0. (If double-deducted, stock would be 2)
-    res = await test_db.execute(text(f"SELECT stock_quantity, active_quantity, reserved_quantity FROM skus WHERE id = '{setup_inventory_data['sku_id_1']}'"))
-    stock = res.fetchone()
-    assert stock[0] == 6
-    assert stock[2] == 0
 
 
 @pytest.mark.asyncio
