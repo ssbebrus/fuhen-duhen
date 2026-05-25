@@ -29,7 +29,6 @@ class Settings(BaseSettings):
     SERVICE_KEY: str
     
     B2C_URL: str = Field(default="http://localhost:8002")
-    B2B_TO_B2C_KEY: str
     
     JWT_SECRET: str
     JWT_ALGORITHM: str = Field(default="HS256")

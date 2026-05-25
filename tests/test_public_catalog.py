@@ -141,16 +141,22 @@ async def test_catalog_response_has_no_cost_price(client: AsyncClient, catalog_s
     # 2. Check detail view of product
     response = await client.get(f"/api/v1/public/products/{catalog_setup['p_mod_active']}", headers=headers)
     assert response.status_code == 200
+    data = response.json()
     res_text = response.text
     assert "cost_price" not in res_text
     assert "reserved_quantity" not in res_text
-
+    assert "stock_quantity" in data["skus"][0]
+    assert data["skus"][0]["stock_quantity"] == 10
+    
     # 3. Check SKU detail view
     response = await client.get(f"/api/v1/public/skus/{catalog_setup['sku_mod_active']}", headers=headers)
     assert response.status_code == 200
+    data = response.json()
     res_text = response.text
     assert "cost_price" not in res_text
     assert "reserved_quantity" not in res_text
+    assert "stock_quantity" in data
+    assert data["stock_quantity"] == 10
 
 @pytest.mark.asyncio
 async def test_batch_ids_returns_visible_subset(client: AsyncClient, catalog_setup: dict):
@@ -169,3 +175,18 @@ async def test_batch_ids_returns_visible_subset(client: AsyncClient, catalog_set
     assert "P Mod Active 2" not in titles
     assert "P Mod Inactive" not in titles
     assert "P Hard Blocked" not in titles
+
+@pytest.mark.asyncio
+async def test_catalog_similar_products(client: AsyncClient, catalog_setup: dict):
+    headers = {"X-Service-Key": settings.SERVICE_KEY}
+    
+    # Check similar products endpoint for p_mod_active
+    response = await client.get(f"/api/v1/public/products/{catalog_setup['p_mod_active']}/similar", headers=headers)
+    assert response.status_code == 200, response.text
+    data = response.json()
+    
+    # Since p_mod_active and p_mod_active_2 are in the same category CatalogCat and both MODERATED/active,
+    # similar products for p_mod_active should include P Mod Active 2
+    titles = [item["title"] for item in data]
+    assert "P Mod Active 2" in titles
+    assert "P Mod Active" not in titles  # Should not include itself
