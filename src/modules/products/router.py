@@ -2,14 +2,14 @@ from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, exists
 from sqlalchemy.orm import selectinload
-from typing import List
+from typing import List, Optional
 from uuid import UUID
 
 from src.db.database import get_db
 from .schemas import (
     ProductCreate, ProductUpdate, ProductResponse, PaginatedProductResponse,
     ProductImageCreateRequest, ProductImageUpdateRequest, ProductImageResponse,
-    ProductPublicResponse, BlockingReason, ProductDetailResponse
+    ProductPublicResponse, BlockingReason, ProductDetailResponse, ProductStatus
 )
 from .service import ProductService
 from src.modules.auth.dependencies import get_current_seller, get_auth_context, AuthContext
@@ -21,14 +21,24 @@ router = APIRouter(prefix="/products", tags=["Products"])
 
 @router.get("/", response_model=PaginatedProductResponse, summary="Получить список своих товаров с пагинацией")
 async def get_products(
-    limit: int = 10, 
+    limit: int = 20, 
     offset: int = 0, 
+    status: Optional[ProductStatus] = None,
+    search: Optional[str] = None,
     include_deleted: bool = False,
     db: AsyncSession = Depends(get_db),
     seller: Seller = Depends(get_current_seller)
 ):
     """Получить список своих товаров с пагинацией"""
-    return await ProductService.get_all(db, limit=limit, offset=offset, seller_id=seller.id, include_deleted=include_deleted)
+    return await ProductService.get_all(
+        db,
+        limit=limit,
+        offset=offset,
+        seller_id=seller.id,
+        include_deleted=include_deleted,
+        status=status,
+        search=search
+    )
 
 @router.get("/{product_id}", response_model=Union[ProductDetailResponse, ProductPublicResponse], summary="Получить товар по ID")
 async def get_product(

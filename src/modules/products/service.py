@@ -22,7 +22,15 @@ def slugify(text: str) -> str:
 
 class ProductService:
     @staticmethod
-    async def get_all(db: AsyncSession, limit: int = 10, offset: int = 0, seller_id: Optional[UUID] = None, include_deleted: bool = False) -> dict:
+    async def get_all(
+        db: AsyncSession,
+        limit: int = 20,
+        offset: int = 0,
+        seller_id: Optional[UUID] = None,
+        include_deleted: bool = False,
+        status: Optional[str] = None,
+        search: Optional[str] = None
+    ) -> dict:
         """Получить список всех продуктов с пагинацией"""
         # Считаем общее количество
         count_query = select(func.count()).select_from(Product)
@@ -32,6 +40,10 @@ class ProductService:
             conditions.append(Product.seller_id == seller_id)
         if not include_deleted:
             conditions.append(Product.deleted == False)
+        if status:
+            conditions.append(Product.status == status)
+        if search:
+            conditions.append(Product.title.ilike(f"%{search}%"))
             
         if conditions:
             count_query = count_query.where(*conditions)
@@ -48,6 +60,7 @@ class ProductService:
         if conditions:
             query = query.where(*conditions)
             
+        query = query.order_by(Product.created_at.desc())
         query = query.limit(limit).offset(offset)
             
         result = await db.execute(query)
