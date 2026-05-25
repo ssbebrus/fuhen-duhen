@@ -159,23 +159,36 @@ class InventoryService:
             if op.status == "UNRESERVED":
                 return op.result
 
-        # 2. Сортируем SKU для предотвращения взаимоблокировок
-        sorted_items = sorted(request.items, key=lambda x: x.sku_id)
-        sorted_sku_ids = [item.sku_id for item in sorted_items]
+        # Находим оригинальную операцию резервирования (RESERVED)
+        reserved_op = next((op for op in existing_ops if op.status == "RESERVED"), None)
 
-        # 3. Блокируем строки SKU в БД
-        stmt_skus = select(SKU).where(SKU.id.in_(sorted_sku_ids)).with_for_update()
-        res_skus = await db.execute(stmt_skus)
-        skus_list = res_skus.scalars().all()
-        skus_map = {sku.id: sku for sku in skus_list}
+        # 2. Восстанавливаем остатки только из найденной операции резервирования (компенсация)
+        items_to_restore = []
+        if reserved_op and "items" in reserved_op.result:
+            for item in reserved_op.result["items"]:
+                sku_id_str = item.get("sku_id")
+                qty = item.get("reserved_quantity", 0)
+                if sku_id_str and qty > 0:
+                    items_to_restore.append((uuid.UUID(sku_id_str), qty))
 
-        # 4. Восстанавливаем остатки
-        for item in request.items:
-            sku = skus_map.get(item.sku_id)
-            if sku:
-                # Увеличиваем active_quantity, уменьшаем reserved_quantity
-                sku.active_quantity += item.quantity
-                sku.reserved_quantity = max(0, sku.reserved_quantity - item.quantity)
+        # Сортируем SKU для предотвращения взаимоблокировок (deadlocks)
+        sorted_items = sorted(items_to_restore, key=lambda x: x[0])
+        sorted_sku_ids = [sku_id for sku_id, _ in sorted_items]
+
+        # 3. Блокируем строки SKU в БД и восстанавливаем остатки
+        if sorted_sku_ids:
+            stmt_skus = select(SKU).where(SKU.id.in_(sorted_sku_ids)).with_for_update()
+            res_skus = await db.execute(stmt_skus)
+            skus_list = res_skus.scalars().all()
+            skus_map = {sku.id: sku for sku in skus_list}
+
+            # 4. Восстанавливаем остатки
+            for sku_id, qty in sorted_items:
+                sku = skus_map.get(sku_id)
+                if sku:
+                    # Увеличиваем active_quantity, уменьшаем reserved_quantity
+                    sku.active_quantity += qty
+                    sku.reserved_quantity = max(0, sku.reserved_quantity - qty)
 
         response_data = {
             "order_id": str(request.order_id),

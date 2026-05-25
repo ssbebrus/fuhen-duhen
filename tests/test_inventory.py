@@ -158,6 +158,12 @@ async def test_partial_insufficient_stock_returns_409_all_rollback(client: Async
     assert sku_1_stock[0] == 10
     assert sku_1_stock[1] == 0
 
+    # Verify that SKU 2 was NOT reserved either
+    res_2 = await test_db.execute(text(f"SELECT active_quantity, reserved_quantity FROM skus WHERE id = '{setup_inventory_data['sku_id_2']}'"))
+    sku_2_stock = res_2.fetchone()
+    assert sku_2_stock[0] == 20
+    assert sku_2_stock[1] == 0
+
 
 @pytest.mark.asyncio
 async def test_idempotent_reserve_returns_200_without_double_deduction(client: AsyncClient, setup_inventory_data: dict, test_db: AsyncSession):
@@ -284,14 +290,10 @@ async def test_unreserve_idempotency(client: AsyncClient, setup_inventory_data: 
     assert response_2.status_code == 200
     assert response_1.json() == response_2.json()
 
-    # Check quantities: they shouldn't double-restore (they should be 14 if it double-restored, but it shouldn't restore at all since no reservation existed)
-    # Wait, our logic does: sku.active_quantity += item.quantity. If we didn't check idempotency, it would increase active_quantity.
-    # Since idempotency works, it skips the second increment.
-    # For the first call, it increases active_quantity from 10 to 14.
-    # For the second call, it returns cached and does NOT increase active_quantity to 18.
+    # Check quantities: they shouldn't change at all since no reservation existed
     res = await test_db.execute(text(f"SELECT active_quantity, reserved_quantity FROM skus WHERE id = '{setup_inventory_data['sku_id_1']}'"))
     stock = res.fetchone()
-    assert stock[0] == 14
+    assert stock[0] == 10
     assert stock[1] == 0
 
 
