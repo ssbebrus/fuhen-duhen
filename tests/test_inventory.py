@@ -85,7 +85,7 @@ async def setup_inventory_data(test_db: AsyncSession):
 
 @pytest.mark.asyncio
 async def test_reserve_all_skus_succeeds(client: AsyncClient, setup_inventory_data: dict, test_db: AsyncSession):
-    headers = {"X-Service-Key": settings.SERVICE_KEY}
+    headers = {"X-Service-Key": settings.B2B_TO_B2C_KEY}
     idempotency_key = uuid.uuid4()
     order_id = uuid.uuid4()
 
@@ -122,7 +122,7 @@ async def test_reserve_all_skus_succeeds(client: AsyncClient, setup_inventory_da
 
 @pytest.mark.asyncio
 async def test_partial_insufficient_stock_returns_409_all_rollback(client: AsyncClient, setup_inventory_data: dict, test_db: AsyncSession):
-    headers = {"X-Service-Key": settings.SERVICE_KEY}
+    headers = {"X-Service-Key": settings.B2B_TO_B2C_KEY}
     idempotency_key = uuid.uuid4()
     order_id = uuid.uuid4()
 
@@ -167,7 +167,7 @@ async def test_partial_insufficient_stock_returns_409_all_rollback(client: Async
 
 @pytest.mark.asyncio
 async def test_idempotent_reserve_returns_200_without_double_deduction(client: AsyncClient, setup_inventory_data: dict, test_db: AsyncSession):
-    headers = {"X-Service-Key": settings.SERVICE_KEY}
+    headers = {"X-Service-Key": settings.B2B_TO_B2C_KEY}
     idempotency_key = uuid.uuid4()
     order_id = uuid.uuid4()
 
@@ -198,7 +198,7 @@ async def test_idempotent_reserve_returns_200_without_double_deduction(client: A
 @pytest.mark.asyncio
 @patch("src.modules.inventory.service.send_b2c_sku_out_of_stock_event")
 async def test_sku_out_of_stock_event_emitted(mock_send, client: AsyncClient, setup_inventory_data: dict):
-    headers = {"X-Service-Key": settings.SERVICE_KEY}
+    headers = {"X-Service-Key": settings.B2B_TO_B2C_KEY}
     idempotency_key = uuid.uuid4()
     order_id = uuid.uuid4()
 
@@ -223,7 +223,7 @@ async def test_sku_out_of_stock_event_emitted(mock_send, client: AsyncClient, se
 
 @pytest.mark.asyncio
 async def test_unreserve_restores_quantities(client: AsyncClient, setup_inventory_data: dict, test_db: AsyncSession):
-    headers = {"X-Service-Key": settings.SERVICE_KEY}
+    headers = {"X-Service-Key": settings.B2B_TO_B2C_KEY}
     idempotency_key = uuid.uuid4()
     order_id = uuid.uuid4()
 
@@ -271,7 +271,7 @@ async def test_unreserve_restores_quantities(client: AsyncClient, setup_inventor
 
 @pytest.mark.asyncio
 async def test_unreserve_idempotency(client: AsyncClient, setup_inventory_data: dict, test_db: AsyncSession):
-    headers = {"X-Service-Key": settings.SERVICE_KEY}
+    headers = {"X-Service-Key": settings.B2B_TO_B2C_KEY}
     order_id = uuid.uuid4()
 
     unreserve_payload = {
@@ -299,7 +299,7 @@ async def test_unreserve_idempotency(client: AsyncClient, setup_inventory_data: 
 
 @pytest.mark.asyncio
 async def test_blocked_product_fails_reservation(client: AsyncClient, setup_inventory_data: dict):
-    headers = {"X-Service-Key": settings.SERVICE_KEY}
+    headers = {"X-Service-Key": settings.B2B_TO_B2C_KEY}
     idempotency_key = uuid.uuid4()
     order_id = uuid.uuid4()
 
@@ -323,7 +323,7 @@ async def test_blocked_product_fails_reservation(client: AsyncClient, setup_inve
 
 @pytest.mark.asyncio
 async def test_deleted_product_fails_reservation(client: AsyncClient, setup_inventory_data: dict):
-    headers = {"X-Service-Key": settings.SERVICE_KEY}
+    headers = {"X-Service-Key": settings.B2B_TO_B2C_KEY}
     idempotency_key = uuid.uuid4()
     order_id = uuid.uuid4()
 
@@ -347,7 +347,7 @@ async def test_deleted_product_fails_reservation(client: AsyncClient, setup_inve
 
 @pytest.mark.asyncio
 async def test_fulfill_decreases_reserved_and_stock_quantities(client: AsyncClient, setup_inventory_data: dict, test_db: AsyncSession):
-    headers = {"X-Service-Key": settings.SERVICE_KEY}
+    headers = {"X-Service-Key": settings.B2B_TO_B2C_KEY}
     idempotency_key = uuid.uuid4()
     order_id = uuid.uuid4()
 
@@ -396,7 +396,7 @@ async def test_fulfill_decreases_reserved_and_stock_quantities(client: AsyncClie
 
 @pytest.mark.asyncio
 async def test_fulfill_idempotency(client: AsyncClient, setup_inventory_data: dict, test_db: AsyncSession):
-    headers = {"X-Service-Key": settings.SERVICE_KEY}
+    headers = {"X-Service-Key": settings.B2B_TO_B2C_KEY}
     idempotency_key = uuid.uuid4()
     order_id = uuid.uuid4()
 
@@ -438,7 +438,7 @@ async def test_fulfill_idempotency(client: AsyncClient, setup_inventory_data: di
 
 @pytest.mark.asyncio
 async def test_active_quantity_unchanged(client: AsyncClient, setup_inventory_data: dict, test_db: AsyncSession):
-    headers = {"X-Service-Key": settings.SERVICE_KEY}
+    headers = {"X-Service-Key": settings.B2B_TO_B2C_KEY}
     idempotency_key = uuid.uuid4()
     order_id = uuid.uuid4()
 

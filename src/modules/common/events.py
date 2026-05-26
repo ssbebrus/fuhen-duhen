@@ -54,7 +54,7 @@ async def send_b2c_product_event(product_id: UUID, sku_ids: list[str], event_typ
         "date": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     }
     url = f"{settings.B2C_URL}/api/v1/events/product"
-    headers = {"X-Service-Key": settings.SERVICE_KEY}
+    headers = {"X-Service-Key": settings.B2B_TO_B2C_KEY}
     
     max_retries = 5
     base_delay = 1.0
@@ -92,7 +92,7 @@ async def send_b2c_sku_out_of_stock_event(product_id: UUID, sku_id: UUID):
         "date": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     }
     url = f"{settings.B2C_URL}/api/v1/events/product"
-    headers = {"X-Service-Key": settings.SERVICE_KEY}
+    headers = {"X-Service-Key": settings.B2B_TO_B2C_KEY}
     
     max_retries = 5
     base_delay = 1.0

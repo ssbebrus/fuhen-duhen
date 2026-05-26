@@ -220,7 +220,7 @@ async def verify_service_key(x_service_key: Optional[str] = Header(None, alias="
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"code": "UNAUTHORIZED", "message": "X-Service-Key header is missing"}
         )
-    if x_service_key != settings.SERVICE_KEY:
+    if x_service_key != settings.B2B_TO_B2C_KEY:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"code": "UNAUTHORIZED", "message": "Invalid X-Service-Key"}

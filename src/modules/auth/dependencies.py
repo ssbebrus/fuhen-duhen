@@ -96,7 +96,7 @@ class AuthContext(BaseModel):
 async def get_auth_context(request: Request, db: AsyncSession = Depends(get_db)) -> AuthContext:
     service_key = request.headers.get("X-Service-Key")
     if service_key:
-        if service_key != settings.SERVICE_KEY:
+        if service_key != settings.B2B_TO_B2C_KEY:
             raise HTTPException(status_code=401, detail={"code": "UNAUTHORIZED", "message": "Invalid X-Service-Key"})
         return AuthContext(mode="service")
 

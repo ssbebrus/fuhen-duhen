@@ -446,7 +446,7 @@ async def test_get_nonexistent_returns_404(client: AsyncClient, setup_data: dict
 
 @pytest.mark.asyncio
 async def test_get_product_with_service_key(client: AsyncClient, setup_data: dict, test_db: AsyncSession):
-    headers = {"X-Service-Key": settings.SERVICE_KEY}
+    headers = {"X-Service-Key": settings.B2B_TO_B2C_KEY}
     product_id = setup_data["product_id_other"]
     
     # Add an SKU to make sure we can check SKU public schema
