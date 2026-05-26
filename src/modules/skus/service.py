@@ -1,13 +1,15 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update
+from sqlalchemy import select, update, func
+from sqlalchemy.orm import selectinload
 from typing import List, Optional
 import uuid
 from uuid import UUID
+from fastapi import BackgroundTasks
 
 from .models import SKU
 from .schemas import SKUCreate, SKUUpdate
 from src.modules.products.models import Product, ProductStatus
-from sqlalchemy import func
+from src.modules.common.events import send_moderation_event, send_b2c_sku_out_of_stock_event
 
 class SKUService:
     @staticmethod
@@ -197,3 +199,53 @@ class SKUService:
         )
         result = await db.execute(query)
         return result.scalar_one_or_none()
+
+    @staticmethod
+    async def delete(db: AsyncSession, sku_id: UUID, seller_id: UUID, background_tasks: BackgroundTasks) -> None:
+        """Удалить SKU"""
+        result = await db.execute(
+            select(SKU)
+            .where(SKU.id == sku_id)
+            .options(selectinload(SKU.product))
+        )
+        sku = result.scalar_one_or_none()
+        
+        if not sku:
+            raise ValueError("SKU not found")
+            
+        product = sku.product
+        if not product:
+            raise ValueError("Product not found")
+            
+        if product.seller_id != seller_id:
+            raise ValueError("Product does not belong to the authenticated seller")
+            
+        if product.status == ProductStatus.HARD_BLOCKED:
+            raise ValueError("Cannot delete SKU of hard-blocked product")
+            
+        if sku.reserved_quantity > 0:
+            raise ValueError("Cannot delete SKU with active reserves")
+            
+        sku_active_quantity = sku.active_quantity
+        
+        # Count remaining SKUs for the product
+        remaining_skus_count = await db.scalar(
+            select(func.count(SKU.id))
+            .where(SKU.product_id == product.id)
+            .where(SKU.id != sku.id)
+        )
+        has_no_skus_left = (remaining_skus_count == 0)
+        
+        # Physical deletion of SKU
+        await db.delete(sku)
+        
+        # Side-effects
+        if has_no_skus_left:
+            if product.status == ProductStatus.ON_MODERATION:
+                product.status = ProductStatus.CREATED
+                background_tasks.add_task(send_moderation_event, product.id, product.seller_id, "DELETED")
+                
+        if sku_active_quantity > 0 and product.status == ProductStatus.MODERATED:
+            background_tasks.add_task(send_b2c_sku_out_of_stock_event, product.id, sku.id)
+            
+        await db.commit()
