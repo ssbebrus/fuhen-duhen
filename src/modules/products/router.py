@@ -9,7 +9,8 @@ from src.db.database import get_db
 from .schemas import (
     ProductCreate, ProductUpdate, ProductResponse, PaginatedProductResponse,
     ProductImageCreateRequest, ProductImageUpdateRequest, ProductImageResponse,
-    ProductPublicResponse, BlockingReason, ProductDetailResponse, ProductStatus
+    ProductPublicResponse, BlockingReason, ProductDetailResponse, ProductStatus,
+    ModerationEventRequest
 )
 from .service import ProductService
 from src.modules.auth.dependencies import get_current_seller, get_auth_context, AuthContext
@@ -125,6 +126,8 @@ async def delete_product(
             raise HTTPException(status_code=403, detail={"code": "NOT_OWNER", "message": "Product does not belong to the authenticated seller"})
         elif str(e) == "Product already deleted":
             raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": "Product already deleted"})
+        elif str(e) == "Cannot edit hard-blocked product":
+            raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "Cannot edit hard-blocked product"})
         raise
         
     background_tasks.add_task(send_moderation_event, product.id, product.seller_id, "DELETED")
@@ -301,3 +304,37 @@ async def get_public_sku(
             detail={"code": "NOT_FOUND", "message": "SKU not found"}
         )
     return SKUPublicResponse.model_validate(sku)
+
+
+async def verify_moderation_service_key(x_service_key: Optional[str] = Header(None, alias="X-Service-Key")) -> str:
+    if not x_service_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"code": "UNAUTHORIZED", "message": "X-Service-Key header is missing"}
+        )
+    if x_service_key != settings.B2B_TO_MOD_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"code": "UNAUTHORIZED", "message": "Invalid X-Service-Key"}
+        )
+    return x_service_key
+
+
+moderation_router = APIRouter(prefix="/moderation", tags=["Moderation Events"])
+
+
+@moderation_router.post("/events", status_code=status.HTTP_204_NO_CONTENT, summary="Приём событий от Moderation Service")
+async def receive_moderation_event(
+    event: ModerationEventRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    _service_key: str = Depends(verify_moderation_service_key)
+):
+    """Приём событий от Moderation Service: MODERATED, BLOCKED (с hard_block flag)"""
+    try:
+        await ProductService.process_moderation_event(db, event, background_tasks)
+    except ValueError as e:
+        if str(e) == "Product not found":
+            raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Product not found"})
+        raise
+    return None

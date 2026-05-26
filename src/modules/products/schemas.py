@@ -151,3 +151,24 @@ class PaginatedProductResponse(PaginatedResponse[ProductShortResponse]):
 
 class ProductBatchRequest(BaseModel):
     product_ids: List[UUID]
+
+
+import enum
+
+class ModerationEventType(str, enum.Enum):
+    MODERATED = "MODERATED"
+    BLOCKED = "BLOCKED"
+
+
+class ModerationEventRequest(BaseModel):
+    idempotency_key: UUID
+    product_id: UUID
+    event_type: ModerationEventType
+    moderator_id: Optional[UUID] = None
+    hard_block: bool = False
+    blocking_reason_id: Optional[UUID] = None
+    moderator_comment: Optional[str] = None
+    field_reports: Optional[List[FieldReport]] = None
+    occurred_at: datetime
+
+
