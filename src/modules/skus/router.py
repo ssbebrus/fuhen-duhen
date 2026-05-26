@@ -142,3 +142,38 @@ async def delete_sku_image(
     if status_changed:
         background_tasks.add_task(send_moderation_event, product.id, product.seller_id, "EDITED")
     return None
+
+@router.delete("/{sku_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Удалить SKU")
+async def delete_sku(
+    sku_id: UUID,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    seller: Seller = Depends(get_current_seller)
+):
+    """Удалить SKU"""
+    try:
+        await SKUService.delete(db, sku_id, seller.id, background_tasks)
+    except ValueError as e:
+        error_msg = str(e)
+        if error_msg == "SKU not found":
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "NOT_FOUND", "message": "SKU not found"}
+            )
+        elif error_msg in ("Product does not belong to the authenticated seller", "SKU does not belong to the authenticated seller"):
+            raise HTTPException(
+                status_code=403,
+                detail={"code": "NOT_OWNER", "message": "SKU does not belong to the authenticated seller"}
+            )
+        elif error_msg == "Cannot delete SKU of hard-blocked product":
+            raise HTTPException(
+                status_code=403,
+                detail={"code": "FORBIDDEN", "message": "Cannot delete SKU of hard-blocked product"}
+            )
+        elif error_msg == "Cannot delete SKU with active reserves":
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "CONFLICT", "message": "Cannot delete SKU with active reserves"}
+            )
+        raise e
+    return None

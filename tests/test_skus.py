@@ -341,3 +341,109 @@ async def test_delete_sku_image(mock_send, client: AsyncClient, setup_data: dict
     res = await test_db.execute(text(f"SELECT images FROM skus WHERE id = '{sku_id}'"))
     images = res.scalar()
     assert len(images) == 0
+
+@pytest.mark.asyncio
+async def test_delete_sku_succeeds(client: AsyncClient, setup_data: dict, test_db: AsyncSession):
+    headers = {"Authorization": f"Bearer {setup_data['token']}"}
+    sku_id = setup_data["sku_id_reserves"]
+    
+    response = await client.delete(f"/api/v1/skus/{sku_id}", headers=headers)
+    assert response.status_code == 204
+    
+    # Verify physically deleted from DB
+    res = await test_db.execute(text(f"SELECT * FROM skus WHERE id = '{sku_id}'"))
+    sku = res.scalar()
+    assert sku is None
+
+@pytest.mark.asyncio
+async def test_delete_sku_with_active_reserves_returns_409(client: AsyncClient, setup_data: dict, test_db: AsyncSession):
+    headers = {"Authorization": f"Bearer {setup_data['token']}"}
+    sku_id = setup_data["sku_id_reserves"]
+    
+    # Set reserved_quantity > 0
+    await test_db.execute(text(f"UPDATE skus SET reserved_quantity = 3 WHERE id = '{sku_id}'"))
+    await test_db.flush()
+    
+    response = await client.delete(f"/api/v1/skus/{sku_id}", headers=headers)
+    assert response.status_code == 409
+    assert response.json()["code"] == "CONFLICT"
+    assert response.json()["message"] == "Cannot delete SKU with active reserves"
+
+@pytest.mark.asyncio
+@patch("src.modules.skus.service.send_moderation_event")
+async def test_last_sku_on_moderation_transitions_product_to_created(mock_send_mod, client: AsyncClient, setup_data: dict, test_db: AsyncSession):
+    headers = {"Authorization": f"Bearer {setup_data['token']}"}
+    
+    # We will use product_id_created, which is CREATED by default.
+    # Let's insert a single SKU for it, and set the product's status to ON_MODERATION
+    product_id = setup_data["product_id_created"]
+    sku_id = uuid.uuid4()
+    await test_db.execute(text(
+        f"INSERT INTO skus (id, product_id, name, price, stock_quantity, article, images, characteristics, created_at, updated_at) "
+        f"VALUES ('{sku_id}', '{product_id}', 'Temp SKU', 1000, 10, 'ART-TEMP', '[]', '[]', now(), now())"
+    ))
+    await test_db.execute(text(f"UPDATE products SET status = 'ON_MODERATION' WHERE id = '{product_id}'"))
+    await test_db.flush()
+    
+    response = await client.delete(f"/api/v1/skus/{sku_id}", headers=headers)
+    assert response.status_code == 204
+    
+    # Verify product status changed to CREATED
+    res = await test_db.execute(text(f"SELECT status FROM products WHERE id = '{product_id}'"))
+    db_status = res.scalar()
+    assert db_status == "CREATED"
+    
+    # Verify DELETED moderation event was triggered
+    mock_send_mod.assert_called_once_with(product_id, setup_data["seller_id"], "DELETED")
+
+@pytest.mark.asyncio
+async def test_delete_sku_hard_blocked_product_returns_403(client: AsyncClient, setup_data: dict, test_db: AsyncSession):
+    headers = {"Authorization": f"Bearer {setup_data['token']}"}
+    
+    # sku_id_reserves belongs to product_id_reserves. Let's make it HARD_BLOCKED.
+    product_id = setup_data["product_id_reserves"]
+    sku_id = setup_data["sku_id_reserves"]
+    await test_db.execute(text(f"UPDATE products SET status = 'HARD_BLOCKED' WHERE id = '{product_id}'"))
+    await test_db.flush()
+    
+    response = await client.delete(f"/api/v1/skus/{sku_id}", headers=headers)
+    assert response.status_code == 403
+    assert response.json()["code"] == "FORBIDDEN"
+    assert response.json()["message"] == "Cannot delete SKU of hard-blocked product"
+
+@pytest.mark.asyncio
+@patch("src.modules.skus.service.send_b2c_sku_out_of_stock_event")
+async def test_sku_out_of_stock_event_on_moderated_product(mock_send_b2c, client: AsyncClient, setup_data: dict, test_db: AsyncSession):
+    headers = {"Authorization": f"Bearer {setup_data['token']}"}
+    sku_id = setup_data["sku_id_reserves"]
+    product_id = setup_data["product_id_reserves"]
+    
+    # Ensure active_quantity > 0 and product is MODERATED (it is MODERATED in setup_data)
+    await test_db.execute(text(f"UPDATE skus SET active_quantity = 5 WHERE id = '{sku_id}'"))
+    await test_db.flush()
+    
+    response = await client.delete(f"/api/v1/skus/{sku_id}", headers=headers)
+    assert response.status_code == 204
+    
+    # Verify B2C SKU_OUT_OF_STOCK event was triggered
+    mock_send_b2c.assert_called_once_with(product_id, sku_id)
+
+@pytest.mark.asyncio
+async def test_delete_sku_other_seller_returns_403(client: AsyncClient, setup_data: dict):
+    headers = {"Authorization": f"Bearer {setup_data['token']}"}
+    sku_id = setup_data["sku_id_other"] # Belongs to seller_id_2
+    
+    response = await client.delete(f"/api/v1/skus/{sku_id}", headers=headers)
+    assert response.status_code == 403
+    assert response.json()["code"] == "NOT_OWNER"
+    assert response.json()["message"] == "SKU does not belong to the authenticated seller"
+
+@pytest.mark.asyncio
+async def test_delete_sku_not_found_returns_404(client: AsyncClient, setup_data: dict):
+    headers = {"Authorization": f"Bearer {setup_data['token']}"}
+    sku_id = uuid.uuid4()
+    
+    response = await client.delete(f"/api/v1/skus/{sku_id}", headers=headers)
+    assert response.status_code == 404
+    assert response.json()["code"] == "NOT_FOUND"
+    assert response.json()["message"] == "SKU not found"
