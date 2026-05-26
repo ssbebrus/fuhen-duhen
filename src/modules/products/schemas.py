@@ -89,10 +89,26 @@ class ProductResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-class ProductDetailResponse(ProductResponse):
+class ProductDetailResponse(BaseModel):
+    id: UUID = Field(..., title="Id")
+    seller_id: UUID = Field(..., title="Seller Id")
+    category_id: UUID = Field(..., title="Category Id")
+    title: str = Field(..., title="Title")
+    slug: str = Field(..., title="Slug")
+    description: str = Field(..., title="Description")
+    status: ProductStatus
+    deleted: bool = Field(..., title="Deleted")
+    images: List[ProductImageResponse] = Field(..., title="Images")
+    characteristics: List[ProductCharacteristicResponse] = Field(..., title="Characteristics")
+    skus: List[SKUResponse] = Field(..., title="Skus")
+    category: CategoryRef = Field(..., title="Category")
+    created_at: datetime = Field(..., title="Created At")
+    updated_at: datetime = Field(..., title="Updated At")
     blocked: bool = Field(default=False, title="Blocked")
     blocking_reason: Optional[BlockingReason] = Field(None, title="Blocking Reason")
     field_reports: List[FieldReport] = Field(default=[], title="Field Reports")
+
+    model_config = ConfigDict(from_attributes=True)
 
 class ProductPublicResponse(BaseModel):
     id: UUID = Field(..., title="Id")
