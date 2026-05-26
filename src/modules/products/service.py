@@ -5,10 +5,10 @@ from sqlalchemy.orm import selectinload
 from typing import List, Optional
 from uuid import UUID
 import uuid
-from fastapi import HTTPException, status
+from fastapi import HTTPException, status, BackgroundTasks
 
-from .models import Product
-from .schemas import ProductCreate, ProductUpdate
+from .models import Product, ProcessedEvent
+from .schemas import ProductCreate, ProductUpdate, ModerationEventRequest
 from src.modules.categories.service import CategoryService
 
 import re
@@ -155,6 +155,9 @@ class ProductService:
             
         if product.deleted:
             raise ValueError("Product already deleted")
+            
+        if product.status == ProductStatus.HARD_BLOCKED:
+            raise ValueError("Cannot edit hard-blocked product")
             
         sku_ids = [str(sku.id) for sku in product.skus]
         
@@ -457,3 +460,72 @@ class ProductService:
             })
 
         return items
+
+    @staticmethod
+    async def process_moderation_event(
+        db: AsyncSession,
+        event: ModerationEventRequest,
+        background_tasks: BackgroundTasks
+    ) -> None:
+        # Check idempotency
+        existing_event = await db.get(ProcessedEvent, event.idempotency_key)
+        if existing_event:
+            return  # Already processed
+
+        # Get product
+        product = await ProductService.get_by_id(db, event.product_id)
+        if not product:
+            raise ValueError("Product not found")
+
+        final_status = event.event_type
+
+        if final_status == "MODERATED":
+            product.status = ProductStatus.MODERATED
+            product.blocking_reason_id = None
+            product.blocking_reason_title = None
+            product.moderator_comment = None
+            product.field_reports = []
+
+        elif final_status == "BLOCKED":
+            if event.hard_block:
+                product.status = ProductStatus.HARD_BLOCKED
+                product.blocking_reason_id = event.blocking_reason_id
+                product.blocking_reason_title = "Blocked by moderation"
+                product.moderator_comment = event.moderator_comment
+            else:
+                product.status = ProductStatus.BLOCKED
+                product.blocking_reason_id = event.blocking_reason_id
+                product.blocking_reason_title = "Blocked by moderation"
+                product.moderator_comment = event.moderator_comment
+
+                # Save field reports
+                if event.field_reports:
+                    product.field_reports = [
+                        {
+                            "field_name": fr.field_name,
+                            "sku_id": str(fr.sku_id) if fr.sku_id else None,
+                            "comment": fr.comment
+                        }
+                        for fr in event.field_reports
+                    ]
+                else:
+                    product.field_reports = []
+
+            # Send cascade to B2C
+            sku_ids = [str(sku.id) for sku in product.skus]
+            from src.modules.common.events import send_b2c_product_event
+            background_tasks.add_task(
+                send_b2c_product_event,
+                product.id,
+                sku_ids,
+                "PRODUCT_BLOCKED"
+            )
+
+        # Record processed event
+        processed_event = ProcessedEvent(
+            idempotency_key=event.idempotency_key,
+            product_id=event.product_id,
+            status=product.status
+        )
+        db.add(processed_event)
+        await db.commit()

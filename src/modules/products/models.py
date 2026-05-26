@@ -71,3 +71,12 @@ class Product(Base, TimestampMixin):
             if sorted_imgs:
                 return sorted_imgs[0].get("url")
         return None
+
+
+class ProcessedEvent(Base, TimestampMixin):
+    __tablename__ = "processed_events"
+
+    idempotency_key: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    product_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("products.id", ondelete="CASCADE"), nullable=False)
+    status: Mapped[str] = mapped_column(String(50), nullable=False)
+

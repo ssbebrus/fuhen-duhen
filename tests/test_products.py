@@ -319,7 +319,7 @@ async def test_delete_emits_event_to_moderation(mock_send_mod, mock_send_b2c, cl
 @patch("src.modules.products.router.send_b2c_product_event")
 @patch("src.modules.products.router.send_moderation_event")
 async def test_delete_emits_product_deleted_to_b2c(mock_send_mod, mock_send_b2c, client: AsyncClient, setup_data: dict, test_db: AsyncSession):
-    product_id = setup_data["product_id_hblk"]
+    product_id = setup_data["product_id_mod"]
     sku_id = uuid.uuid4()
     await test_db.execute(text(
         f"INSERT INTO skus (id, name, price, stock_quantity, product_id, images, characteristics, created_at, updated_at) "
