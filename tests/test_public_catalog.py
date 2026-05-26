@@ -81,7 +81,7 @@ async def catalog_setup(test_db: AsyncSession):
 
 @pytest.mark.asyncio
 async def test_catalog_returns_moderated_in_stock_products(client: AsyncClient, catalog_setup: dict):
-    headers = {"X-Service-Key": settings.SERVICE_KEY}
+    headers = {"X-Service-Key": settings.B2B_TO_B2C_KEY}
     response = await client.get("/api/v1/public/products", headers=headers)
     assert response.status_code == 200, response.text
     data = response.json()
@@ -104,7 +104,7 @@ async def test_catalog_returns_moderated_in_stock_products(client: AsyncClient, 
 
 @pytest.mark.asyncio
 async def test_catalog_excludes_hard_blocked(client: AsyncClient, catalog_setup: dict):
-    headers = {"X-Service-Key": settings.SERVICE_KEY}
+    headers = {"X-Service-Key": settings.B2B_TO_B2C_KEY}
     response = await client.get("/api/v1/public/products", headers=headers)
     assert response.status_code == 200, response.text
     data = response.json()
@@ -129,7 +129,7 @@ async def test_catalog_missing_service_key_returns_401(client: AsyncClient, cata
 
 @pytest.mark.asyncio
 async def test_catalog_response_has_no_cost_price(client: AsyncClient, catalog_setup: dict):
-    headers = {"X-Service-Key": settings.SERVICE_KEY}
+    headers = {"X-Service-Key": settings.B2B_TO_B2C_KEY}
     
     # 1. Check list view
     response = await client.get("/api/v1/public/products", headers=headers)
@@ -160,7 +160,7 @@ async def test_catalog_response_has_no_cost_price(client: AsyncClient, catalog_s
 
 @pytest.mark.asyncio
 async def test_batch_ids_returns_visible_subset(client: AsyncClient, catalog_setup: dict):
-    headers = {"X-Service-Key": settings.SERVICE_KEY}
+    headers = {"X-Service-Key": settings.B2B_TO_B2C_KEY}
     
     # Test through the GET list view batch filter ?ids=
     ids_param = f"{catalog_setup['p_mod_active']},{catalog_setup['p_mod_inactive']},{catalog_setup['p_hard_blocked']},{uuid.uuid4()}"
@@ -178,7 +178,7 @@ async def test_batch_ids_returns_visible_subset(client: AsyncClient, catalog_set
 
 @pytest.mark.asyncio
 async def test_catalog_similar_products(client: AsyncClient, catalog_setup: dict):
-    headers = {"X-Service-Key": settings.SERVICE_KEY}
+    headers = {"X-Service-Key": settings.B2B_TO_B2C_KEY}
     
     # Check similar products endpoint for p_mod_active
     response = await client.get(f"/api/v1/public/products/{catalog_setup['p_mod_active']}/similar", headers=headers)
