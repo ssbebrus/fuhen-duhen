@@ -395,6 +395,8 @@ async def test_get_moderated_product_returns_full_payload(client: AsyncClient, s
     data = response.json()
     assert data["status"] == "MODERATED"
     assert data["blocking_reason"] is None
+    assert "blocking_reason_id" not in data
+    assert "moderator_comment" not in data
     assert data["field_reports"] == []
     assert len(data["skus"]) == 1
     assert "cost_price" in data["skus"][0]
@@ -423,6 +425,8 @@ async def test_get_blocked_product_returns_blocking_reason_and_field_reports(cli
     assert data["blocking_reason"]["id"] == str(reason_id)
     assert data["blocking_reason"]["title"] == "Bad Title"
     assert data["blocking_reason"]["comment"] == "Comment"
+    assert "blocking_reason_id" not in data
+    assert "moderator_comment" not in data
     assert len(data["field_reports"]) == 1
     assert data["field_reports"][0]["field_name"] == "title"
 
