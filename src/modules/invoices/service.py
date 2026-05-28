@@ -67,6 +67,45 @@ class InvoiceService:
         }
 
     @staticmethod
+    async def get_by_id(db: AsyncSession, invoice_id: UUID, seller_id: UUID) -> Invoice:
+        query = select(Invoice).where(Invoice.id == invoice_id).options(selectinload(Invoice.items))
+        result = await db.execute(query)
+        invoice = result.scalar_one_or_none()
+        if not invoice:
+            raise InvoiceNotFoundError("Invoice not found")
+            
+        if invoice.seller_id != seller_id:
+            raise NotOwnerError("Invoice does not belong to the authenticated seller")
+            
+        sku_ids = [item.sku_id for item in invoice.items]
+        sku_query = select(SKU).where(SKU.id.in_(sku_ids))
+        sku_result = await db.execute(sku_query)
+        skus = {sku.id: sku for sku in sku_result.scalars().all()}
+        
+        for item in invoice.items:
+            sku = skus.get(item.sku_id)
+            item.sku_name = sku.name if sku else "Unknown SKU"
+            
+        return invoice
+
+    @staticmethod
+    async def delete(db: AsyncSession, invoice_id: UUID, seller_id: UUID) -> None:
+        query = select(Invoice).where(Invoice.id == invoice_id)
+        result = await db.execute(query)
+        invoice = result.scalar_one_or_none()
+        if not invoice:
+            raise InvoiceNotFoundError("Invoice not found")
+            
+        if invoice.seller_id != seller_id:
+            raise NotOwnerError("Invoice does not belong to the authenticated seller")
+            
+        if invoice.status != InvoiceStatus.CREATED:
+            raise InvoiceAlreadyProcessedError("Cannot delete invoice that is already processed")
+            
+        await db.delete(invoice)
+        await db.commit()
+
+    @staticmethod
     async def create(db: AsyncSession, invoice_in: InvoiceCreate, seller_id: UUID) -> Invoice:
         if not invoice_in.items:
             raise InvoiceItemMissingError("At least one item is required")
