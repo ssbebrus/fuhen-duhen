@@ -358,3 +358,92 @@ async def test_accept_invoice_by_seller_returns_403(client: AsyncClient, setup_d
     assert accept_res.status_code == 403, f"Status: {accept_res.status_code}, Body: {accept_res.text}"
     assert accept_res.json()["code"] == "FORBIDDEN"
     assert accept_res.json()["message"] == "Only warehouse operators are authorized to perform this action"
+
+@pytest.mark.asyncio
+async def test_get_invoices_returns_200(client: AsyncClient, setup_data: dict, test_db: AsyncSession):
+    seller_headers = {"Authorization": f"Bearer {setup_data['token']}"}
+    
+    # Create an invoice
+    payload_create = {
+        "items": [
+            {"sku_id": str(setup_data["sku_id_moderated"]), "quantity": 10}
+        ]
+    }
+    
+    await client.post("/api/v1/invoices", json=payload_create, headers=seller_headers)
+    
+    # Get invoices
+    res = await client.get("/api/v1/invoices", headers=seller_headers)
+    assert res.status_code == 200
+    
+    data = res.json()
+    assert "items" in data
+    assert "total_count" in data
+    assert len(data["items"]) >= 1
+
+@pytest.mark.asyncio
+async def test_get_invoice_by_id_returns_200(client: AsyncClient, setup_data: dict):
+    seller_headers = {"Authorization": f"Bearer {setup_data['token']}"}
+    
+    # Create an invoice
+    payload_create = {
+        "items": [
+            {"sku_id": str(setup_data["sku_id_moderated"]), "quantity": 10}
+        ]
+    }
+    
+    create_res = await client.post("/api/v1/invoices", json=payload_create, headers=seller_headers)
+    invoice_id = create_res.json()["id"]
+    
+    # Get invoice by id
+    res = await client.get(f"/api/v1/invoices/{invoice_id}", headers=seller_headers)
+    assert res.status_code == 200
+    
+    data = res.json()
+    assert data["id"] == invoice_id
+    assert data["seller_id"] == str(setup_data["seller_id"])
+
+@pytest.mark.asyncio
+async def test_delete_invoice_returns_204(client: AsyncClient, setup_data: dict):
+    seller_headers = {"Authorization": f"Bearer {setup_data['token']}"}
+    
+    # Create an invoice
+    payload_create = {
+        "items": [
+            {"sku_id": str(setup_data["sku_id_moderated"]), "quantity": 10}
+        ]
+    }
+    
+    create_res = await client.post("/api/v1/invoices", json=payload_create, headers=seller_headers)
+    invoice_id = create_res.json()["id"]
+    
+    # Delete invoice
+    res = await client.delete(f"/api/v1/invoices/{invoice_id}", headers=seller_headers)
+    assert res.status_code == 204
+    
+    # Verify it's deleted
+    res_get = await client.get(f"/api/v1/invoices/{invoice_id}", headers=seller_headers)
+    assert res_get.status_code == 404
+
+@pytest.mark.asyncio
+async def test_delete_invoice_already_processed_returns_409(client: AsyncClient, setup_data: dict):
+    seller_headers = {"Authorization": f"Bearer {setup_data['token']}"}
+    operator_headers = {"Authorization": f"Bearer {setup_data['operator_token']}"}
+    
+    # Create an invoice
+    payload_create = {
+        "items": [
+            {"sku_id": str(setup_data["sku_id_moderated"]), "quantity": 10}
+        ]
+    }
+    
+    create_res = await client.post("/api/v1/invoices", json=payload_create, headers=seller_headers)
+    invoice_id = create_res.json()["id"]
+    
+    # Accept invoice
+    await client.post(f"/api/v1/invoices/{invoice_id}/accept", json={}, headers=operator_headers)
+    
+    # Try to delete
+    res = await client.delete(f"/api/v1/invoices/{invoice_id}", headers=seller_headers)
+    assert res.status_code == 409
+    assert res.json()["code"] == "CONFLICT"
