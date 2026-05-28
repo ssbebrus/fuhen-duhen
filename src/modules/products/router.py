@@ -255,7 +255,7 @@ async def list_public_products(
     )
     return ProductPublicPaginatedResponse.model_validate(data)
 
-@public_router.get("/categories/{category_id}/filters", response_model=CategoryFiltersResponse, summary="Доступные фильтры для категории")
+@public_router.get("/categories/{category_id}/filters", response_model=CategoryFiltersResponse, response_model_exclude_none=True, summary="Доступные фильтры для категории")
 async def get_public_category_filters(
     category_id: UUID,
     db: AsyncSession = Depends(get_db),
