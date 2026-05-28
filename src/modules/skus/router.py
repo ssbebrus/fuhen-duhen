@@ -13,6 +13,10 @@ from .schemas import (
     SKUImageCreateRequest, SKUImageUpdateRequest, SKUImageResponse
 )
 from .service import SKUService
+from .exceptions import (
+    SkuNotFoundError, ProductNotFoundError, NotOwnerError, 
+    SkuHardBlockedError, SkuHasReservesError, ImageNotFoundError
+)
 from src.modules.auth.dependencies import get_current_seller
 from src.modules.auth.models import Seller
 from src.modules.common.events import send_moderation_event
@@ -31,14 +35,12 @@ async def create_sku(
         raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": "price must be a positive integer (kopecks)"})
     try:
         new_sku, status_changed, product = await SKUService.create(db, sku_in, seller.id)
-    except ValueError as e:
-        if str(e) == "Product not found":
-            raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Product not found"})
-        elif str(e) == "Product is hard-blocked":
-            raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "Cannot add SKU to hard-blocked product"})
-        elif str(e) == "Product does not belong to the authenticated seller":
-            raise HTTPException(status_code=403, detail={"code": "NOT_OWNER", "message": "Product does not belong to the authenticated seller"})
-        raise
+    except ProductNotFoundError:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Product not found"})
+    except SkuHardBlockedError:
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "Cannot add SKU to hard-blocked product"})
+    except NotOwnerError:
+        raise HTTPException(status_code=403, detail={"code": "NOT_OWNER", "message": "Product does not belong to the authenticated seller"})
         
     if status_changed:
         background_tasks.add_task(send_moderation_event, product.id, product.seller_id)
@@ -56,14 +58,12 @@ async def update_sku(
     """Обновить SKU"""
     try:
         sku, status_changed = await SKUService.update(db, sku_id, sku_in, seller.id)
-    except ValueError as e:
-        if str(e) == "SKU not found" or str(e) == "Product not found":
-            raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "SKU not found"})
-        elif str(e) == "Product does not belong to the authenticated seller":
-            raise HTTPException(status_code=403, detail={"code": "NOT_OWNER", "message": "Product does not belong to the authenticated seller"})
-        elif str(e) == "Cannot edit SKU of a hard-blocked product":
-            raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "Cannot edit hard-blocked product"})
-        raise
+    except (SkuNotFoundError, ProductNotFoundError):
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "SKU not found"})
+    except NotOwnerError:
+        raise HTTPException(status_code=403, detail={"code": "NOT_OWNER", "message": "Product does not belong to the authenticated seller"})
+    except SkuHardBlockedError:
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "Cannot edit hard-blocked product"})
         
     if status_changed:
         background_tasks.add_task(send_moderation_event, sku.product_id, seller.id, "EDITED")
@@ -81,16 +81,12 @@ async def add_sku_image(
     """Добавить изображение к SKU"""
     try:
         new_image, status_changed, product = await SKUService.add_image(db, sku_id, image_in, seller.id)
-    except ValueError as e:
-        if str(e) == "SKU not found":
-            raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "SKU not found"})
-        elif str(e) == "Product not found":
-            raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Product not found"})
-        elif str(e) == "Product does not belong to the authenticated seller":
-            raise HTTPException(status_code=403, detail={"code": "NOT_OWNER", "message": "Product does not belong to the authenticated seller"})
-        elif str(e) == "Cannot edit SKU of a hard-blocked product":
-            raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "Cannot edit hard-blocked product"})
-        raise
+    except (SkuNotFoundError, ProductNotFoundError):
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "SKU or Product not found"})
+    except NotOwnerError:
+        raise HTTPException(status_code=403, detail={"code": "NOT_OWNER", "message": "Product does not belong to the authenticated seller"})
+    except SkuHardBlockedError:
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "Cannot edit hard-blocked product"})
 
     if status_changed:
         background_tasks.add_task(send_moderation_event, product.id, product.seller_id, "EDITED")
@@ -107,14 +103,14 @@ async def update_sku_image(
     """Обновить изображение SKU"""
     try:
         updated_image, status_changed, product = await SKUService.update_image(db, image_id, image_in, seller.id)
-    except ValueError as e:
-        if str(e) == "Image not found":
-            raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Image not found"})
-        elif str(e) == "Product does not belong to the authenticated seller":
-            raise HTTPException(status_code=403, detail={"code": "NOT_OWNER", "message": "Product does not belong to the authenticated seller"})
-        elif str(e) == "Cannot edit SKU of a hard-blocked product":
-            raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "Cannot edit hard-blocked product"})
-        raise
+    except ImageNotFoundError:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Image not found"})
+    except ProductNotFoundError:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Product not found"})
+    except NotOwnerError:
+        raise HTTPException(status_code=403, detail={"code": "NOT_OWNER", "message": "Product does not belong to the authenticated seller"})
+    except SkuHardBlockedError:
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "Cannot edit hard-blocked product"})
 
     if status_changed:
         background_tasks.add_task(send_moderation_event, product.id, product.seller_id, "EDITED")
@@ -130,14 +126,14 @@ async def delete_sku_image(
     """Удалить изображение SKU"""
     try:
         status_changed, product = await SKUService.delete_image(db, image_id, seller.id)
-    except ValueError as e:
-        if str(e) == "Image not found":
-            raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Image not found"})
-        elif str(e) == "Product does not belong to the authenticated seller":
-            raise HTTPException(status_code=403, detail={"code": "NOT_OWNER", "message": "Product does not belong to the authenticated seller"})
-        elif str(e) == "Cannot edit SKU of a hard-blocked product":
-            raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "Cannot edit hard-blocked product"})
-        raise
+    except ImageNotFoundError:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Image not found"})
+    except ProductNotFoundError:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Product not found"})
+    except NotOwnerError:
+        raise HTTPException(status_code=403, detail={"code": "NOT_OWNER", "message": "Product does not belong to the authenticated seller"})
+    except SkuHardBlockedError:
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "Cannot edit hard-blocked product"})
 
     if status_changed:
         background_tasks.add_task(send_moderation_event, product.id, product.seller_id, "EDITED")
@@ -153,27 +149,12 @@ async def delete_sku(
     """Удалить SKU"""
     try:
         await SKUService.delete(db, sku_id, seller.id, background_tasks)
-    except ValueError as e:
-        error_msg = str(e)
-        if error_msg == "SKU not found":
-            raise HTTPException(
-                status_code=404,
-                detail={"code": "NOT_FOUND", "message": "SKU not found"}
-            )
-        elif error_msg in ("Product does not belong to the authenticated seller", "SKU does not belong to the authenticated seller"):
-            raise HTTPException(
-                status_code=403,
-                detail={"code": "NOT_OWNER", "message": "SKU does not belong to the authenticated seller"}
-            )
-        elif error_msg == "Cannot delete SKU of hard-blocked product":
-            raise HTTPException(
-                status_code=403,
-                detail={"code": "FORBIDDEN", "message": "Cannot delete SKU of hard-blocked product"}
-            )
-        elif error_msg == "Cannot delete SKU with active reserves":
-            raise HTTPException(
-                status_code=409,
-                detail={"code": "CONFLICT", "message": "Cannot delete SKU with active reserves"}
-            )
-        raise e
+    except (SkuNotFoundError, ProductNotFoundError):
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "SKU not found"})
+    except NotOwnerError:
+        raise HTTPException(status_code=403, detail={"code": "NOT_OWNER", "message": "SKU does not belong to the authenticated seller"})
+    except SkuHardBlockedError:
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "Cannot delete SKU of hard-blocked product"})
+    except SkuHasReservesError:
+        raise HTTPException(status_code=409, detail={"code": "CONFLICT", "message": "Cannot delete SKU with active reserves"})
     return None

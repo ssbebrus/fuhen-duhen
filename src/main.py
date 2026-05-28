@@ -37,7 +37,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
             message = "At least one image is required"
             
     return JSONResponse(
-        status_code=400,
+        status_code=422,
         content={"code": "VALIDATION_ERROR", "message": message},
     )
 

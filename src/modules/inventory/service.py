@@ -11,6 +11,7 @@ from .schemas import ReserveRequest, InventoryOrderRequest, ReservedItemInfo
 from src.modules.skus.models import SKU
 from src.modules.products.models import Product, ProductStatus
 from src.modules.common.events import send_b2c_sku_out_of_stock_event
+from .exceptions import NotEnoughReservedQuantityError
 
 class InventoryService:
     @staticmethod
@@ -188,7 +189,9 @@ class InventoryService:
                 if sku:
                     # Увеличиваем active_quantity, уменьшаем reserved_quantity
                     sku.active_quantity += qty
-                    sku.reserved_quantity = max(0, sku.reserved_quantity - qty)
+                    if sku.reserved_quantity < qty:
+                        raise NotEnoughReservedQuantityError("Not enough reserved quantity")
+                    sku.reserved_quantity -= qty
 
         response_data = {
             "order_id": str(request.order_id),
@@ -247,8 +250,10 @@ class InventoryService:
             sku = skus_map.get(item.sku_id)
             if sku:
                 # Уменьшаем stock_quantity и reserved_quantity
-                sku.stock_quantity = max(0, sku.stock_quantity - item.quantity)
-                sku.reserved_quantity = max(0, sku.reserved_quantity - item.quantity)
+                if sku.reserved_quantity < item.quantity or sku.stock_quantity < item.quantity:
+                    raise NotEnoughReservedQuantityError("Not enough reserved quantity")
+                sku.stock_quantity -= item.quantity
+                sku.reserved_quantity -= item.quantity
 
         response_data = {
             "order_id": str(request.order_id),

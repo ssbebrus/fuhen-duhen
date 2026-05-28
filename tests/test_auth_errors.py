@@ -40,7 +40,7 @@ async def test_create_product_missing_token_returns_401(client: AsyncClient, set
         "images": [{"url": "http://img", "ordering": 0}]
     }
     # No Authorization header
-    response = await client.post("/api/v1/products/", json=payload)
+    response = await client.post("/api/v1/products", json=payload)
     assert response.status_code == 401
     data = response.json()
     assert data["code"] == "UNAUTHORIZED"
@@ -55,7 +55,7 @@ async def test_create_product_invalid_token_returns_401(client: AsyncClient, set
         "images": [{"url": "http://img", "ordering": 0}]
     }
     headers = {"Authorization": "Bearer invalid_token_here"}
-    response = await client.post("/api/v1/products/", json=payload, headers=headers)
+    response = await client.post("/api/v1/products", json=payload, headers=headers)
     assert response.status_code == 401
     data = response.json()
     assert data["code"] == "UNAUTHORIZED"

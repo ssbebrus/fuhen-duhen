@@ -10,6 +10,14 @@ from fastapi import HTTPException, status, BackgroundTasks
 from .models import Product, ProcessedEvent
 from .schemas import ProductCreate, ProductUpdate, ModerationEventRequest
 from src.modules.categories.service import CategoryService
+from .exceptions import (
+    ProductNotFoundError,
+    NotOwnerError,
+    ProductHardBlockedError,
+    ProductAlreadyDeletedError,
+    ImageNotFoundError,
+    InvalidUUIDError
+)
 
 import re
 
@@ -138,13 +146,13 @@ class ProductService:
         """Обновить продукт"""
         product = await ProductService.get_by_id(db, product_id)
         if not product:
-            raise ValueError("Product not found")
+            raise ProductNotFoundError("Product not found")
             
         if product.seller_id != seller_id:
-            raise ValueError("Product does not belong to the authenticated seller")
+            raise NotOwnerError("Product does not belong to the authenticated seller")
             
         if product.status == ProductStatus.HARD_BLOCKED:
-            raise ValueError("Cannot edit hard-blocked product")
+            raise ProductHardBlockedError("Cannot edit hard-blocked product")
             
         update_data = product_in.model_dump(exclude_unset=True)
             
@@ -166,16 +174,16 @@ class ProductService:
         """Мягкое удаление продукта"""
         product = await ProductService.get_by_id(db, product_id)
         if not product:
-            raise ValueError("Product not found")
+            raise ProductNotFoundError("Product not found")
             
         if product.seller_id != seller_id:
-            raise ValueError("Product does not belong to the authenticated seller")
+            raise NotOwnerError("Product does not belong to the authenticated seller")
             
         if product.deleted:
-            raise ValueError("Product already deleted")
+            raise ProductAlreadyDeletedError("Product already deleted")
             
         if product.status == ProductStatus.HARD_BLOCKED:
-            raise ValueError("Cannot edit hard-blocked product")
+            raise ProductHardBlockedError("Cannot edit hard-blocked product")
             
         sku_ids = [str(sku.id) for sku in product.skus]
         
@@ -190,11 +198,11 @@ class ProductService:
     async def add_image(db: AsyncSession, product_id: UUID, image_in, seller_id: UUID) -> tuple[dict, bool, Product]:
         product = await ProductService.get_by_id(db, product_id)
         if not product:
-            raise ValueError("Product not found")
+            raise ProductNotFoundError("Product not found")
         if product.seller_id != seller_id:
-            raise ValueError("Product does not belong to the authenticated seller")
+            raise NotOwnerError("Product does not belong to the authenticated seller")
         if product.status == ProductStatus.HARD_BLOCKED:
-            raise ValueError("Cannot edit hard-blocked product")
+            raise ProductHardBlockedError("Cannot edit hard-blocked product")
             
         new_image = image_in.model_dump()
         new_image["id"] = str(uuid.uuid4())
@@ -220,16 +228,16 @@ class ProductService:
         product = result.scalar_one_or_none()
         
         if not product:
-            raise ValueError("Image not found")
+            raise ImageNotFoundError("Image not found")
         if product.seller_id != seller_id:
-            raise ValueError("Product does not belong to the authenticated seller")
+            raise NotOwnerError("Product does not belong to the authenticated seller")
         if product.status == ProductStatus.HARD_BLOCKED:
-            raise ValueError("Cannot edit hard-blocked product")
+            raise ProductHardBlockedError("Cannot edit hard-blocked product")
             
         images = list(product.images)
         image_to_update = next((img for img in images if img["id"] == str(image_id)), None)
         if not image_to_update:
-            raise ValueError("Image not found in product")
+            raise ImageNotFoundError("Image not found in product")
             
         update_data = image_in.model_dump(exclude_unset=True)
         image_to_update.update(update_data)
@@ -253,11 +261,11 @@ class ProductService:
         product = result.scalar_one_or_none()
         
         if not product:
-            raise ValueError("Image not found")
+            raise ImageNotFoundError("Image not found")
         if product.seller_id != seller_id:
-            raise ValueError("Product does not belong to the authenticated seller")
+            raise NotOwnerError("Product does not belong to the authenticated seller")
         if product.status == ProductStatus.HARD_BLOCKED:
-            raise ValueError("Cannot edit hard-blocked product")
+            raise ProductHardBlockedError("Cannot edit hard-blocked product")
             
         images = [img for img in product.images if img["id"] != str(image_id)]
         
@@ -343,7 +351,7 @@ class ProductService:
                 if uuid_list:
                     conditions.append(Product.id.in_(uuid_list))
             except ValueError:
-                pass
+                raise InvalidUUIDError("INVALID_UUID")
 
         query = (
             select(Product)
@@ -543,7 +551,7 @@ class ProductService:
         # Get product
         product = await ProductService.get_by_id(db, event.product_id)
         if not product:
-            raise ValueError("Product not found")
+            raise ProductNotFoundError("Product not found")
 
         final_status = event.event_type
 
@@ -557,37 +565,36 @@ class ProductService:
         elif final_status == "BLOCKED":
             if event.hard_block:
                 product.status = ProductStatus.HARD_BLOCKED
-                product.blocking_reason_id = event.blocking_reason_id
-                product.blocking_reason_title = "Blocked by moderation"
-                product.moderator_comment = event.moderator_comment
             else:
                 product.status = ProductStatus.BLOCKED
-                product.blocking_reason_id = event.blocking_reason_id
-                product.blocking_reason_title = "Blocked by moderation"
-                product.moderator_comment = event.moderator_comment
+            
+            product.blocking_reason_id = event.blocking_reason_id
+            product.blocking_reason_title = "Blocked by moderation"
+            product.moderator_comment = event.moderator_comment
 
-                # Save field reports
-                if event.field_reports:
-                    product.field_reports = [
-                        {
-                            "field_name": fr.field_name,
-                            "sku_id": str(fr.sku_id) if fr.sku_id else None,
-                            "comment": fr.comment
-                        }
-                        for fr in event.field_reports
-                    ]
-                else:
-                    product.field_reports = []
+            # Save field reports
+            if event.field_reports:
+                product.field_reports = [
+                    {
+                        "field_name": fr.field_name,
+                        "sku_id": str(fr.sku_id) if fr.sku_id else None,
+                        "comment": fr.comment
+                    }
+                    for fr in event.field_reports
+                ]
+            else:
+                product.field_reports = []
 
-            # Send cascade to B2C
-            sku_ids = [str(sku.id) for sku in product.skus]
-            from src.modules.common.events import send_b2c_product_event
-            background_tasks.add_task(
-                send_b2c_product_event,
-                product.id,
-                sku_ids,
-                "PRODUCT_BLOCKED"
-            )
+            # Send cascade to B2C only if it was visible
+            if any(sku.active_quantity > 0 for sku in product.skus):
+                sku_ids = [str(sku.id) for sku in product.skus]
+                from src.modules.common.events import send_b2c_product_event
+                background_tasks.add_task(
+                    send_b2c_product_event,
+                    product.id,
+                    sku_ids,
+                    "PRODUCT_BLOCKED"
+                )
 
         # Record processed event
         processed_event = ProcessedEvent(

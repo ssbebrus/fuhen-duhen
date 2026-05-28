@@ -10,6 +10,10 @@ from .models import SKU
 from .schemas import SKUCreate, SKUUpdate
 from src.modules.products.models import Product, ProductStatus
 from src.modules.common.events import send_moderation_event, send_b2c_sku_out_of_stock_event
+from .exceptions import (
+    SkuNotFoundError, ProductNotFoundError, NotOwnerError, 
+    SkuHardBlockedError, SkuHasReservesError, ImageNotFoundError
+)
 
 class SKUService:
     @staticmethod
@@ -24,11 +28,11 @@ class SKUService:
         # Получаем товар
         product = await db.scalar(select(Product).where(Product.id == sku_in.product_id))
         if not product:
-            raise ValueError("Product not found")
+            raise ProductNotFoundError("Product not found")
         if product.seller_id != seller_id:
-            raise ValueError("Product does not belong to the authenticated seller")
+            raise NotOwnerError("Product does not belong to the authenticated seller")
         if product.status == ProductStatus.HARD_BLOCKED:
-            raise ValueError("Product is hard-blocked")
+            raise SkuHardBlockedError("Product is hard-blocked")
 
         # Проверяем, является ли это первым SKU
         sku_count = await db.scalar(select(func.count(SKU.id)).where(SKU.product_id == sku_in.product_id))
@@ -62,17 +66,17 @@ class SKUService:
         """Обновить SKU"""
         sku = await SKUService.get_by_id(db, sku_id)
         if not sku:
-            raise ValueError("SKU not found")
+            raise SkuNotFoundError("SKU not found")
             
         product = await db.scalar(select(Product).where(Product.id == sku.product_id))
         if not product:
-            raise ValueError("Product not found")
+            raise ProductNotFoundError("Product not found")
             
         if product.seller_id != seller_id:
-            raise ValueError("Product does not belong to the authenticated seller")
+            raise NotOwnerError("Product does not belong to the authenticated seller")
             
         if product.status == ProductStatus.HARD_BLOCKED:
-            raise ValueError("Cannot edit SKU of a hard-blocked product")
+            raise SkuHardBlockedError("Cannot edit SKU of a hard-blocked product")
             
         update_data = sku_in.model_dump(exclude_unset=True)
         
@@ -94,15 +98,15 @@ class SKUService:
     async def add_image(db: AsyncSession, sku_id: UUID, image_in, seller_id: UUID) -> tuple[dict, bool, Product]:
         sku = await SKUService.get_by_id(db, sku_id)
         if not sku:
-            raise ValueError("SKU not found")
+            raise SkuNotFoundError("SKU not found")
         
         product = await db.scalar(select(Product).where(Product.id == sku.product_id))
         if not product:
-            raise ValueError("Product not found")
+            raise ProductNotFoundError("Product not found")
         if product.seller_id != seller_id:
-            raise ValueError("Product does not belong to the authenticated seller")
+            raise NotOwnerError("Product does not belong to the authenticated seller")
         if product.status == ProductStatus.HARD_BLOCKED:
-            raise ValueError("Cannot edit SKU of a hard-blocked product")
+            raise SkuHardBlockedError("Cannot edit SKU of a hard-blocked product")
             
         new_image = image_in.model_dump()
         new_image["id"] = str(uuid.uuid4())
@@ -127,15 +131,15 @@ class SKUService:
         sku = result.scalar_one_or_none()
         
         if not sku:
-            raise ValueError("Image not found")
+            raise ImageNotFoundError("Image not found")
             
         product = await db.scalar(select(Product).where(Product.id == sku.product_id))
         if not product:
-            raise ValueError("Product not found")
+            raise ProductNotFoundError("Product not found")
         if product.seller_id != seller_id:
-            raise ValueError("Product does not belong to the authenticated seller")
+            raise NotOwnerError("Product does not belong to the authenticated seller")
         if product.status == ProductStatus.HARD_BLOCKED:
-            raise ValueError("Cannot edit SKU of a hard-blocked product")
+            raise SkuHardBlockedError("Cannot edit SKU of a hard-blocked product")
             
         images = list(sku.images)
         image_to_update = next((img for img in images if img["id"] == str(image_id)), None)
@@ -163,15 +167,15 @@ class SKUService:
         sku = result.scalar_one_or_none()
         
         if not sku:
-            raise ValueError("Image not found")
+            raise ImageNotFoundError("Image not found")
             
         product = await db.scalar(select(Product).where(Product.id == sku.product_id))
         if not product:
-            raise ValueError("Product not found")
+            raise ProductNotFoundError("Product not found")
         if product.seller_id != seller_id:
-            raise ValueError("Product does not belong to the authenticated seller")
+            raise NotOwnerError("Product does not belong to the authenticated seller")
         if product.status == ProductStatus.HARD_BLOCKED:
-            raise ValueError("Cannot edit SKU of a hard-blocked product")
+            raise SkuHardBlockedError("Cannot edit SKU of a hard-blocked product")
             
         images = [img for img in sku.images if img["id"] != str(image_id)]
         
@@ -207,24 +211,25 @@ class SKUService:
             select(SKU)
             .where(SKU.id == sku_id)
             .options(selectinload(SKU.product))
+            .with_for_update()
         )
         sku = result.scalar_one_or_none()
         
         if not sku:
-            raise ValueError("SKU not found")
+            raise SkuNotFoundError("SKU not found")
             
         product = sku.product
         if not product:
-            raise ValueError("Product not found")
+            raise ProductNotFoundError("Product not found")
             
         if product.seller_id != seller_id:
-            raise ValueError("Product does not belong to the authenticated seller")
+            raise NotOwnerError("Product does not belong to the authenticated seller")
             
         if product.status == ProductStatus.HARD_BLOCKED:
-            raise ValueError("Cannot delete SKU of hard-blocked product")
+            raise SkuHardBlockedError("Cannot delete SKU of hard-blocked product")
             
         if sku.reserved_quantity > 0:
-            raise ValueError("Cannot delete SKU with active reserves")
+            raise SkuHasReservesError("Cannot delete SKU with active reserves")
             
         sku_active_quantity = sku.active_quantity
         

@@ -3,13 +3,23 @@ from sqlalchemy import select, update, func
 from sqlalchemy.orm import selectinload
 from typing import List, Optional
 from uuid import UUID
-from fastapi import HTTPException, status
+from fastapi import status
 import datetime
 
 from .models import Invoice, InvoiceItem, InvoiceStatus
 from .schemas import InvoiceCreate, InvoiceAcceptRequest
 from src.modules.skus.models import SKU
 from src.modules.products.models import ProductStatus
+from .exceptions import (
+    InvoiceItemMissingError,
+    SkuNotFoundError,
+    NotOwnerError,
+    InvalidProductStatusError,
+    InvalidQuantityError,
+    InvoiceNotFoundError,
+    InvoiceAlreadyProcessedError,
+    InvoiceItemNotFoundError
+)
 
 class InvoiceService:
     @staticmethod
@@ -59,10 +69,7 @@ class InvoiceService:
     @staticmethod
     async def create(db: AsyncSession, invoice_in: InvoiceCreate, seller_id: UUID) -> Invoice:
         if not invoice_in.items:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail={"code": "INVALID_REQUEST", "message": "At least one item is required"}
-            )
+            raise InvoiceItemMissingError("At least one item is required")
 
         sku_ids = [item.sku_id for item in invoice_in.items]
         
@@ -73,28 +80,16 @@ class InvoiceService:
         for item in invoice_in.items:
             sku = skus.get(item.sku_id)
             if not sku:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail={"code": "NOT_FOUND", "message": "SKU not found"}
-                )
+                raise SkuNotFoundError("SKU not found")
             
             if sku.product.seller_id != seller_id:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail={"code": "NOT_OWNER", "message": "One or more SKUs do not belong to the authenticated seller"}
-                )
+                raise NotOwnerError("One or more SKUs do not belong to the authenticated seller")
             
             if sku.product.status != ProductStatus.MODERATED:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail={"code": "INVALID_REQUEST", "message": "Invoice can only be created for MODERATED products"}
-                )
+                raise InvalidProductStatusError("Invoice can only be created for MODERATED products")
                 
             if item.quantity <= 0:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail={"code": "INVALID_REQUEST", "message": "quantity must be > 0"}
-                )
+                raise InvalidQuantityError("quantity must be > 0")
 
         new_invoice = Invoice(
             seller_id=seller_id,
@@ -131,16 +126,10 @@ class InvoiceService:
         result = await db.execute(query)
         invoice = result.scalar_one_or_none()
         if not invoice:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail={"code": "NOT_FOUND", "message": "Invoice not found"}
-            )
+            raise InvoiceNotFoundError("Invoice not found")
         
         if invoice.status != InvoiceStatus.CREATED:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail={"code": "CONFLICT", "message": "Invoice is already processed"}
-            )
+            raise InvoiceAlreadyProcessedError("Invoice is already processed")
 
         invoice_items_map = {item.id: item for item in invoice.items}
         accepted_quantities = {}
@@ -152,16 +141,10 @@ class InvoiceService:
             for acc_item in accept_in.accepted_items:
                 item = invoice_items_map.get(acc_item.invoice_item_id)
                 if not item:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail={"code": "INVALID_REQUEST", "message": f"Invoice item {acc_item.invoice_item_id} not found in this invoice"}
-                    )
+                    raise InvoiceItemNotFoundError(f"Invoice item {acc_item.invoice_item_id} not found in this invoice")
                 
                 if acc_item.accepted_quantity < 0 or acc_item.accepted_quantity > item.quantity:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail={"code": "INVALID_REQUEST", "message": f"accepted_quantity must be between 0 and {item.quantity}"}
-                    )
+                    raise InvalidQuantityError(f"accepted_quantity must be between 0 and {item.quantity}")
                 accepted_quantities[acc_item.invoice_item_id] = acc_item.accepted_quantity
             
             for item in invoice.items:

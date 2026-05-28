@@ -186,7 +186,7 @@ async def test_add_sku_to_hard_blocked_returns_403(client: AsyncClient, setup_da
     assert response.json()["code"] == "FORBIDDEN"
 
 @pytest.mark.asyncio
-async def test_missing_required_fields_returns_400(client: AsyncClient, setup_data: dict):
+async def test_missing_required_fields_returns_422(client: AsyncClient, setup_data: dict):
     headers = {"Authorization": f"Bearer {setup_data['token']}"}
     
     # Missing name
@@ -196,7 +196,7 @@ async def test_missing_required_fields_returns_400(client: AsyncClient, setup_da
         "cost_price": 500
     }
     response = await client.post("/api/v1/skus", json=payload_no_name, headers=headers)
-    assert response.status_code == 400
+    assert response.status_code == 422
     
     # Missing price
     payload_no_price = {
@@ -206,7 +206,7 @@ async def test_missing_required_fields_returns_400(client: AsyncClient, setup_da
     }
 
     response = await client.post("/api/v1/skus", json=payload_no_price, headers=headers)
-    assert response.status_code == 400
+    assert response.status_code == 422
 
     # Missing product_id
     payload_no_product = {
@@ -215,7 +215,7 @@ async def test_missing_required_fields_returns_400(client: AsyncClient, setup_da
         "cost_price": 500
     }
     response = await client.post("/api/v1/skus", json=payload_no_product, headers=headers)
-    assert response.status_code == 400
+    assert response.status_code == 422
 
     # Missing cost_price
     payload_no_cost = {
@@ -224,7 +224,7 @@ async def test_missing_required_fields_returns_400(client: AsyncClient, setup_da
         "price": 1000
     }
     response = await client.post("/api/v1/skus", json=payload_no_cost, headers=headers)
-    assert response.status_code == 400
+    assert response.status_code == 422
 
 @pytest.mark.asyncio
 async def test_create_sku_other_seller_returns_403(client: AsyncClient, setup_data: dict):
