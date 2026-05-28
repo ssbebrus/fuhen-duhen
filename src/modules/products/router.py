@@ -205,10 +205,11 @@ async def delete_product_image(
         background_tasks.add_task(send_moderation_event, product.id, product.seller_id, "EDITED")
     return None
 
-from fastapi import Header
+from fastapi import Header, Request
 from typing import Optional
 from .schemas import (
-    ProductPublicShortResponse, ProductPublicPaginatedResponse, ProductBatchRequest
+    ProductPublicShortResponse, ProductPublicPaginatedResponse, ProductBatchRequest,
+    CategoryFiltersResponse, CategoryFacetsResponse
 )
 from src.modules.skus.schemas import SKUPublicResponse
 from src.config import settings
@@ -231,6 +232,7 @@ public_router = APIRouter(prefix="/public", tags=["Public Catalog"])
 
 @public_router.get("/products", response_model=ProductPublicPaginatedResponse, summary="Витрина — список товаров")
 async def list_public_products(
+    request: Request,
     category_id: Optional[UUID] = None,
     search: Optional[str] = None,
     sort: Optional[str] = None,
@@ -241,10 +243,44 @@ async def list_public_products(
     _service_key: str = Depends(verify_service_key)
 ):
     """Витрина — только MODERATED, не deleted, active_quantity > 0"""
+    
+    filters_dict = {}
+    for key, value in request.query_params.items():
+        if key.startswith("filters[") and key.endswith("]"):
+            slug = key[8:-1]
+            filters_dict[slug] = value
+            
     data = await ProductService.get_public_catalog(
-        db, limit=limit, offset=offset, category_id=category_id, search=search, sort=sort, ids=ids
+        db, limit=limit, offset=offset, category_id=category_id, search=search, sort=sort, ids=ids, filters=filters_dict
     )
     return ProductPublicPaginatedResponse.model_validate(data)
+
+@public_router.get("/categories/{category_id}/filters", response_model=CategoryFiltersResponse, response_model_exclude_none=True, summary="Доступные фильтры для категории")
+async def get_public_category_filters(
+    category_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _service_key: str = Depends(verify_service_key)
+):
+    """Возвращает список характеристик и цен, по которым можно фильтровать, с возможными значениями"""
+    filters = await ProductService.get_category_filters(db, category_id)
+    return CategoryFiltersResponse.model_validate(filters)
+
+@public_router.get("/facets", response_model=CategoryFacetsResponse, summary="Фасеты с подсчётом товаров")
+async def get_public_category_facets(
+    request: Request,
+    category_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _service_key: str = Depends(verify_service_key)
+):
+    """Возвращает количество товаров для каждого значения фильтра при текущей выборке"""
+    filters_dict = {}
+    for key, value in request.query_params.items():
+        if key.startswith("filters[") and key.endswith("]"):
+            slug = key[8:-1]
+            filters_dict[slug] = value
+            
+    facets = await ProductService.get_category_facets(db, category_id, filters_dict)
+    return CategoryFacetsResponse.model_validate(facets)
 
 @public_router.post("/products/batch", response_model=List[ProductPublicResponse], summary="Batch-получение карточек по списку product_id")
 async def batch_public_products(

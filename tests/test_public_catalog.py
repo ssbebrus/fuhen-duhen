@@ -34,13 +34,13 @@ async def catalog_setup(test_db: AsyncSession):
 
     await test_db.execute(text(
         f"INSERT INTO products (id, title, slug, description, status, deleted, category_id, seller_id, images, characteristics, created_at, updated_at) VALUES "
-        f"('{p_mod_active}', 'P Mod Active', 'p-mod-active', 'Desc Active', 'MODERATED', false, '{category_id}', '{seller_id}', '[{{\"id\": \"{img_id}\", \"url\": \"http://img1\", \"ordering\": 0}}]', '[]', now(), now()), "
+        f"('{p_mod_active}', 'P Mod Active', 'p-mod-active', 'Desc Active', 'MODERATED', false, '{category_id}', '{seller_id}', '[{{\"id\": \"{img_id}\", \"url\": \"http://img1\", \"ordering\": 0}}]', '[{{\"id\": \"{uuid.uuid4()}\", \"name\": \"Бренд\", \"value\": \"Apple\"}}]', now(), now()), "
         f"('{p_mod_inactive}', 'P Mod Inactive', 'p-mod-inactive', 'Desc Inactive', 'MODERATED', false, '{category_id}', '{seller_id}', '[]', '[]', now(), now()), "
         f"('{p_hard_blocked}', 'P Hard Blocked', 'p-hard-blocked', 'Desc HBlk', 'HARD_BLOCKED', false, '{category_id}', '{seller_id}', '[]', '[]', now(), now()), "
         f"('{p_blocked}', 'P Blocked', 'p-blocked', 'Desc Blk', 'BLOCKED', false, '{category_id}', '{seller_id}', '[]', '[]', now(), now()), "
         f"('{p_created}', 'P Created', 'p-created', 'Desc Created', 'CREATED', false, '{category_id}', '{seller_id}', '[]', '[]', now(), now()), "
         f"('{p_deleted}', 'P Deleted', 'p-deleted', 'Desc Deleted', 'MODERATED', true, '{category_id}', '{seller_id}', '[]', '[]', now(), now()), "
-        f"('{p_mod_active_2}', 'P Mod Active 2', 'p-mod-active-2', 'Desc Active 2', 'MODERATED', false, '{category_id}', '{seller_id}', '[]', '[]', now(), now())"
+        f"('{p_mod_active_2}', 'P Mod Active 2', 'p-mod-active-2', 'Desc Active 2', 'MODERATED', false, '{category_id}', '{seller_id}', '[]', '[{{\"id\": \"{uuid.uuid4()}\", \"name\": \"Бренд\", \"value\": \"Samsung\"}}]', now(), now())"
     ))
 
     # 4. Create SKUs
@@ -190,3 +190,67 @@ async def test_catalog_similar_products(client: AsyncClient, catalog_setup: dict
     titles = [item["title"] for item in data]
     assert "P Mod Active 2" in titles
     assert "P Mod Active" not in titles  # Should not include itself
+
+@pytest.mark.asyncio
+async def test_catalog_category_filters(client: AsyncClient, catalog_setup: dict):
+    headers = {"X-Service-Key": settings.B2B_TO_B2C_KEY}
+    
+    response = await client.get(f"/api/v1/public/categories/{catalog_setup['category_id']}/filters", headers=headers)
+    assert response.status_code == 200, response.text
+    data = response.json()
+    
+    items = data["items"]
+    assert len(items) == 2 # Price and Brand
+    
+    price_filter = next((i for i in items if i["slug"] == "price"), None)
+    assert price_filter is not None
+    assert price_filter["type"] == "range"
+    assert price_filter["min"] == 1000 # p_mod_active min price
+    assert price_filter["max"] == 1500 # p_mod_active_2 min price
+    
+    brand_filter = next((i for i in items if i["name"] == "Бренд"), None)
+    assert brand_filter is not None
+    assert brand_filter["slug"] == "brend"
+    assert brand_filter["type"] == "list"
+    assert "Apple" in brand_filter["value"]
+    assert "Samsung" in brand_filter["value"]
+
+@pytest.mark.asyncio
+async def test_catalog_facets(client: AsyncClient, catalog_setup: dict):
+    headers = {"X-Service-Key": settings.B2B_TO_B2C_KEY}
+    
+    # Facets without filters
+    response = await client.get(f"/api/v1/public/facets?category_id={catalog_setup['category_id']}", headers=headers)
+    assert response.status_code == 200, response.text
+    data = response.json()
+    
+    facets = data["facets"]
+    assert len(facets) == 1
+    
+    brand_facet = facets[0]
+    assert brand_facet["name"] == "brend"
+    values = {v["value"]: v["count"] for v in brand_facet["values"]}
+    assert values["Apple"] == 1
+    assert values["Samsung"] == 1
+    
+    # Facets with filter filters[brend]=Apple
+    response = await client.get(f"/api/v1/public/facets?category_id={catalog_setup['category_id']}&filters[brend]=Apple", headers=headers)
+    assert response.status_code == 200, response.text
+    data = response.json()
+    
+    brand_facet = data["facets"][0]
+    values = {v["value"]: v["count"] for v in brand_facet["values"]}
+    assert values.get("Apple") == 1
+    assert "Samsung" not in values # because it's filtered out
+
+@pytest.mark.asyncio
+async def test_catalog_products_with_filter(client: AsyncClient, catalog_setup: dict):
+    headers = {"X-Service-Key": settings.B2B_TO_B2C_KEY}
+    
+    response = await client.get(f"/api/v1/public/products?category_id={catalog_setup['category_id']}&filters[brend]=Apple", headers=headers)
+    assert response.status_code == 200, response.text
+    data = response.json()
+    
+    items = data["items"]
+    assert len(items) == 1
+    assert items[0]["title"] == "P Mod Active"

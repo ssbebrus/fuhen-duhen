@@ -168,6 +168,29 @@ class PaginatedProductResponse(PaginatedResponse[ProductShortResponse]):
 class ProductBatchRequest(BaseModel):
     product_ids: List[UUID]
 
+class FilterItem(BaseModel):
+    slug: str = Field(..., title="Slug")
+    name: str = Field(..., title="Name")
+    type: str = Field(..., title="Type")
+    value: Optional[List[str]] = Field(None, title="Value")
+    min: Optional[int] = Field(None, title="Min")
+    max: Optional[int] = Field(None, title="Max")
+
+class CategoryFiltersResponse(BaseModel):
+    items: List[FilterItem] = Field(..., title="Items")
+
+class FacetValue(BaseModel):
+    value: str = Field(..., title="Value")
+    count: int = Field(..., title="Count")
+
+class FacetItem(BaseModel):
+    name: str = Field(..., title="Name")
+    values: List[FacetValue] = Field(..., title="Values")
+
+class CategoryFacetsResponse(BaseModel):
+    category_id: UUID = Field(..., title="Category Id")
+    facets: List[FacetItem] = Field(..., title="Facets")
+
 
 import enum
 
