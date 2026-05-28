@@ -20,6 +20,24 @@ def slugify(text: str) -> str:
     text = re.sub(r'^-+|-+$', '', text)
     return text
 
+def safe_slugify(text: str) -> str:
+    mapping = {
+        'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'e',
+        'ж': 'zh', 'з': 'z', 'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm',
+        'н': 'n', 'о': 'o', 'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u',
+        'ф': 'f', 'х': 'h', 'ц': 'ts', 'ч': 'ch', 'ш': 'sh', 'щ': 'sch',
+        'ъ': '', 'ы': 'y', 'ь': '', 'э': 'e', 'ю': 'yu', 'я': 'ya'
+    }
+    text = text.lower()
+    res = []
+    for char in text:
+        res.append(mapping.get(char, char))
+    text = "".join(res)
+    text = re.sub(r'[^\w\s-]', '', text)
+    text = re.sub(r'[\s_-]+', '-', text)
+    text = re.sub(r'^-+|-+$', '', text)
+    return text
+
 class ProductService:
     @staticmethod
     async def get_all(
@@ -254,6 +272,33 @@ class ProductService:
         return status_changed, product
 
     @staticmethod
+    def _matches_filters(product: Product, filters_dict: dict) -> bool:
+        if not filters_dict:
+            return True
+            
+        char_map = {}
+        if product.characteristics:
+            for char in product.characteristics:
+                name = char.get("name")
+                val = char.get("value")
+                if name and val:
+                    slug = safe_slugify(name)
+                    if slug not in char_map:
+                        char_map[slug] = set()
+                    char_map[slug].add(val)
+                    
+        for slug, expected_val in filters_dict.items():
+            if slug == "price":
+                continue # ignore price filter here, usually price is min,max or similar
+            if slug not in char_map:
+                return False
+            # Check if expected_val matches any value for this characteristic
+            # B2C expects exact match for string filters e.g. filters[brand]=Apple
+            if expected_val not in char_map[slug]:
+                return False
+        return True
+
+    @staticmethod
     async def get_public_catalog(
         db: AsyncSession,
         limit: int = 20,
@@ -261,7 +306,8 @@ class ProductService:
         category_id: Optional[UUID] = None,
         search: Optional[str] = None,
         sort: Optional[str] = None,
-        ids: Optional[str] = None
+        ids: Optional[str] = None,
+        filters: Optional[dict] = None
     ) -> dict:
         """Получить список публичных продуктов для B2C с фильтрами видимости"""
         from src.modules.skus.models import SKU
@@ -299,36 +345,58 @@ class ProductService:
             except ValueError:
                 pass
 
-        # Meta Total Count
-        count_query = select(func.count()).select_from(Product).where(*conditions)
-        total_result = await db.execute(count_query)
-        total = total_result.scalar() or 0
-
-        # Min SKU Price subquery for price sorting
-        min_price_sub = (
-            select(func.min(SKU.price))
-            .where(SKU.product_id == Product.id, SKU.active_quantity > 0)
-            .scalar_subquery()
-        )
-
         query = (
             select(Product)
             .options(selectinload(Product.category), selectinload(Product.skus))
             .where(*conditions)
         )
 
-        if sort == "price_asc":
-            query = query.order_by(min_price_sub.asc())
-        elif sort == "price_desc":
-            query = query.order_by(min_price_sub.desc())
-        elif sort in ["created_desc", "date_desc"]:
-            query = query.order_by(Product.created_at.desc())
+        if filters:
+            result = await db.execute(query)
+            all_products = result.scalars().all()
+            
+            filtered_products = []
+            for p in all_products:
+                if ProductService._matches_filters(p, filters):
+                    filtered_products.append(p)
+                    
+            total = len(filtered_products)
+            
+            if sort == "price_asc":
+                filtered_products.sort(key=lambda p: p.min_price or float('inf'))
+            elif sort == "price_desc":
+                filtered_products.sort(key=lambda p: p.min_price or 0, reverse=True)
+            elif sort in ["created_desc", "date_desc"]:
+                filtered_products.sort(key=lambda p: p.created_at, reverse=True)
+            else:
+                filtered_products.sort(key=lambda p: p.created_at, reverse=True)
+                
+            products = filtered_products[offset:offset+limit]
         else:
-            query = query.order_by(Product.created_at.desc())
+            # Meta Total Count
+            count_query = select(func.count()).select_from(Product).where(*conditions)
+            total_result = await db.execute(count_query)
+            total = total_result.scalar() or 0
 
-        query = query.limit(limit).offset(offset)
-        result = await db.execute(query)
-        products = list(result.scalars().all())
+            # Min SKU Price subquery for price sorting
+            min_price_sub = (
+                select(func.min(SKU.price))
+                .where(SKU.product_id == Product.id, SKU.active_quantity > 0)
+                .scalar_subquery()
+            )
+
+            if sort == "price_asc":
+                query = query.order_by(min_price_sub.asc())
+            elif sort == "price_desc":
+                query = query.order_by(min_price_sub.desc())
+            elif sort in ["created_desc", "date_desc"]:
+                query = query.order_by(Product.created_at.desc())
+            else:
+                query = query.order_by(Product.created_at.desc())
+
+            query = query.limit(limit).offset(offset)
+            result = await db.execute(query)
+            products = list(result.scalars().all())
 
         items = []
         for product in products:
@@ -529,3 +597,120 @@ class ProductService:
         )
         db.add(processed_event)
         await db.commit()
+
+    @staticmethod
+    async def get_category_filters(db: AsyncSession, category_id: UUID) -> dict:
+        from src.modules.skus.models import SKU
+        from sqlalchemy import exists
+
+        active_sku_exists = exists().where(
+            SKU.product_id == Product.id,
+            SKU.active_quantity > 0
+        )
+        
+        query = (
+            select(Product)
+            .options(selectinload(Product.skus))
+            .where(
+                Product.category_id == category_id,
+                Product.status == ProductStatus.MODERATED,
+                Product.deleted == False,
+                active_sku_exists
+            )
+        )
+        result = await db.execute(query)
+        products = list(result.scalars().all())
+
+        if not products:
+            return {"items": []}
+
+        all_prices = []
+        char_map = {}
+        for p in products:
+            for sku in p.skus:
+                if sku.active_quantity > 0:
+                    all_prices.append(sku.price)
+            if p.characteristics:
+                for char in p.characteristics:
+                    name = char.get("name")
+                    val = char.get("value")
+                    if name and val:
+                        if name not in char_map:
+                            char_map[name] = set()
+                        char_map[name].add(val)
+
+        filters = []
+        if all_prices:
+            filters.append({
+                "slug": "price",
+                "name": "Цена",
+                "type": "range",
+                "min": min(all_prices),
+                "max": max(all_prices)
+            })
+
+        for name, values_set in char_map.items():
+            filters.append({
+                "slug": safe_slugify(name),
+                "name": name,
+                "type": "list",
+                "value": list(values_set)
+            })
+            
+        return {"items": filters}
+
+    @staticmethod
+    async def get_category_facets(db: AsyncSession, category_id: UUID, filters_dict: dict) -> dict:
+        from src.modules.skus.models import SKU
+        from sqlalchemy import exists
+
+        active_sku_exists = exists().where(
+            SKU.product_id == Product.id,
+            SKU.active_quantity > 0
+        )
+        
+        query = (
+            select(Product)
+            .where(
+                Product.category_id == category_id,
+                Product.status == ProductStatus.MODERATED,
+                Product.deleted == False,
+                active_sku_exists
+            )
+        )
+        result = await db.execute(query)
+        all_products = list(result.scalars().all())
+
+        filtered_products = []
+        for p in all_products:
+            if ProductService._matches_filters(p, filters_dict):
+                filtered_products.append(p)
+
+        facets_map = {}
+        for p in filtered_products:
+            if p.characteristics:
+                for char in p.characteristics:
+                    name = char.get("name")
+                    val = char.get("value")
+                    if name and val:
+                        slug = safe_slugify(name)
+                        if slug not in facets_map:
+                            facets_map[slug] = {}
+                        if val not in facets_map[slug]:
+                            facets_map[slug][val] = 0
+                        facets_map[slug][val] += 1
+
+        facets_list = []
+        for slug, values_counts in facets_map.items():
+            values_list = []
+            for val, count in values_counts.items():
+                values_list.append({"value": val, "count": count})
+            facets_list.append({
+                "name": slug,
+                "values": values_list
+            })
+
+        return {
+            "category_id": category_id,
+            "facets": facets_list
+        }
