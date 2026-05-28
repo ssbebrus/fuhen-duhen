@@ -53,9 +53,9 @@ async def setup_moderation_data(test_db: AsyncSession):
     sku_id_1 = uuid.uuid4()
     sku_id_2 = uuid.uuid4()
     await test_db.execute(text(
-        f"INSERT INTO skus (id, name, price, stock_quantity, product_id, images, characteristics, created_at, updated_at) "
-        f"VALUES ('{sku_id_1}', 'SKU 1', 1000, 10, '{product_id_on_mod}', '[]', '[]', now(), now()), "
-        f"('{sku_id_2}', 'SKU 2', 2000, 20, '{product_id_blocked}', '[]', '[]', now(), now())"
+        f"INSERT INTO skus (id, name, price, stock_quantity, active_quantity, product_id, images, characteristics, created_at, updated_at) "
+        f"VALUES ('{sku_id_1}', 'SKU 1', 1000, 10, 10, '{product_id_on_mod}', '[]', '[]', now(), now()), "
+        f"('{sku_id_2}', 'SKU 2', 2000, 20, 20, '{product_id_blocked}', '[]', '[]', now(), now())"
     ))
 
     await test_db.flush()

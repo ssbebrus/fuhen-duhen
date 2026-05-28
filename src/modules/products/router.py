@@ -13,6 +13,14 @@ from .schemas import (
     ModerationEventRequest
 )
 from .service import ProductService
+from .exceptions import (
+    ProductNotFoundError,
+    NotOwnerError,
+    ProductHardBlockedError,
+    ProductAlreadyDeletedError,
+    ImageNotFoundError,
+    InvalidUUIDError
+)
 from src.modules.auth.dependencies import get_current_seller, get_auth_context, AuthContext
 from src.modules.auth.models import Seller
 from src.modules.common.events import send_moderation_event, send_b2c_product_event
@@ -20,7 +28,7 @@ from typing import Union
 
 router = APIRouter(prefix="/products", tags=["Products"])
 
-@router.get("/", response_model=PaginatedProductResponse, summary="Получить список своих товаров с пагинацией")
+@router.get("", response_model=PaginatedProductResponse, summary="Получить список своих товаров с пагинацией")
 async def get_products(
     limit: int = 20, 
     offset: int = 0, 
@@ -74,7 +82,7 @@ async def get_product(
         # Service mode
         return ProductPublicResponse.model_validate(product)
 
-@router.post("/", response_model=ProductResponse, status_code=status.HTTP_201_CREATED, summary="Создать товар")
+@router.post("", response_model=ProductResponse, status_code=status.HTTP_201_CREATED, summary="Создать товар")
 async def create_product(
     product_in: ProductCreate, 
     db: AsyncSession = Depends(get_db),
@@ -94,14 +102,12 @@ async def update_product(
     """Обновить товар"""
     try:
         product, status_changed = await ProductService.update(db, product_id, product_in, seller.id)
-    except ValueError as e:
-        if str(e) == "Product not found":
-            raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Product not found"})
-        elif str(e) == "Product does not belong to the authenticated seller":
-            raise HTTPException(status_code=403, detail={"code": "NOT_OWNER", "message": "Product does not belong to the authenticated seller"})
-        elif str(e) == "Cannot edit hard-blocked product":
-            raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "Cannot edit hard-blocked product"})
-        raise
+    except ProductNotFoundError:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Product not found"})
+    except NotOwnerError:
+        raise HTTPException(status_code=403, detail={"code": "NOT_OWNER", "message": "Product does not belong to the authenticated seller"})
+    except ProductHardBlockedError:
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "Cannot edit hard-blocked product"})
         
         
     if status_changed:
@@ -119,16 +125,14 @@ async def delete_product(
     """Мягкое удаление товара"""
     try:
         product, sku_ids = await ProductService.delete(db, product_id, seller.id)
-    except ValueError as e:
-        if str(e) == "Product not found":
-            raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Product not found"})
-        elif str(e) == "Product does not belong to the authenticated seller":
-            raise HTTPException(status_code=403, detail={"code": "NOT_OWNER", "message": "Product does not belong to the authenticated seller"})
-        elif str(e) == "Product already deleted":
-            raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": "Product already deleted"})
-        elif str(e) == "Cannot edit hard-blocked product":
-            raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "Cannot edit hard-blocked product"})
-        raise
+    except ProductNotFoundError:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Product not found"})
+    except NotOwnerError:
+        raise HTTPException(status_code=403, detail={"code": "NOT_OWNER", "message": "Product does not belong to the authenticated seller"})
+    except ProductAlreadyDeletedError:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": "Product already deleted"})
+    except ProductHardBlockedError:
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "Cannot edit hard-blocked product"})
         
     background_tasks.add_task(send_moderation_event, product.id, product.seller_id, "DELETED")
     background_tasks.add_task(send_b2c_product_event, product.id, sku_ids, "PRODUCT_DELETED")
@@ -145,14 +149,12 @@ async def add_product_image(
     """Добавить изображение к товару"""
     try:
         new_image, status_changed, product = await ProductService.add_image(db, product_id, image_in, seller.id)
-    except ValueError as e:
-        if str(e) == "Product not found":
-            raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Product not found"})
-        elif str(e) == "Product does not belong to the authenticated seller":
-            raise HTTPException(status_code=403, detail={"code": "NOT_OWNER", "message": "Product does not belong to the authenticated seller"})
-        elif str(e) == "Cannot edit hard-blocked product":
-            raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "Cannot edit hard-blocked product"})
-        raise
+    except ProductNotFoundError:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Product not found"})
+    except NotOwnerError:
+        raise HTTPException(status_code=403, detail={"code": "NOT_OWNER", "message": "Product does not belong to the authenticated seller"})
+    except ProductHardBlockedError:
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "Cannot edit hard-blocked product"})
 
     if status_changed:
         background_tasks.add_task(send_moderation_event, product.id, product.seller_id, "EDITED")
@@ -169,14 +171,12 @@ async def update_product_image(
     """Обновить изображение товара"""
     try:
         updated_image, status_changed, product = await ProductService.update_image(db, image_id, image_in, seller.id)
-    except ValueError as e:
-        if str(e) == "Image not found":
-            raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Image not found"})
-        elif str(e) == "Product does not belong to the authenticated seller":
-            raise HTTPException(status_code=403, detail={"code": "NOT_OWNER", "message": "Product does not belong to the authenticated seller"})
-        elif str(e) == "Cannot edit hard-blocked product":
-            raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "Cannot edit hard-blocked product"})
-        raise
+    except ImageNotFoundError:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Image not found"})
+    except NotOwnerError:
+        raise HTTPException(status_code=403, detail={"code": "NOT_OWNER", "message": "Product does not belong to the authenticated seller"})
+    except ProductHardBlockedError:
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "Cannot edit hard-blocked product"})
 
     if status_changed:
         background_tasks.add_task(send_moderation_event, product.id, product.seller_id, "EDITED")
@@ -192,14 +192,12 @@ async def delete_product_image(
     """Удалить изображение товара"""
     try:
         status_changed, product = await ProductService.delete_image(db, image_id, seller.id)
-    except ValueError as e:
-        if str(e) == "Image not found":
-            raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Image not found"})
-        elif str(e) == "Product does not belong to the authenticated seller":
-            raise HTTPException(status_code=403, detail={"code": "NOT_OWNER", "message": "Product does not belong to the authenticated seller"})
-        elif str(e) == "Cannot edit hard-blocked product":
-            raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "Cannot edit hard-blocked product"})
-        raise
+    except ImageNotFoundError:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Image not found"})
+    except NotOwnerError:
+        raise HTTPException(status_code=403, detail={"code": "NOT_OWNER", "message": "Product does not belong to the authenticated seller"})
+    except ProductHardBlockedError:
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "Cannot edit hard-blocked product"})
 
     if status_changed:
         background_tasks.add_task(send_moderation_event, product.id, product.seller_id, "EDITED")
@@ -250,9 +248,13 @@ async def list_public_products(
             slug = key[8:-1]
             filters_dict[slug] = value
             
-    data = await ProductService.get_public_catalog(
-        db, limit=limit, offset=offset, category_id=category_id, search=search, sort=sort, ids=ids, filters=filters_dict
-    )
+    try:
+        data = await ProductService.get_public_catalog(
+            db, limit=limit, offset=offset, category_id=category_id, search=search, sort=sort, ids=ids, filters=filters_dict
+        )
+    except InvalidUUIDError:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": "Invalid UUID in ids filter"})
+        
     return ProductPublicPaginatedResponse.model_validate(data)
 
 @public_router.get("/categories/{category_id}/filters", response_model=CategoryFiltersResponse, response_model_exclude_none=True, summary="Доступные фильтры для категории")
@@ -369,8 +371,6 @@ async def receive_moderation_event(
     """Приём событий от Moderation Service: MODERATED, BLOCKED (с hard_block flag)"""
     try:
         await ProductService.process_moderation_event(db, event, background_tasks)
-    except ValueError as e:
-        if str(e) == "Product not found":
-            raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Product not found"})
-        raise
+    except ProductNotFoundError:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Product not found"})
     return None

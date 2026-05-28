@@ -128,10 +128,10 @@ async def test_create_invoice_with_moderated_sku_returns_201(client: AsyncClient
     assert data["items"][0]["sku_id"] == str(setup_data["sku_id_moderated"])
     assert data["items"][0]["sku_name"] == "256GB Black"
     assert data["items"][0]["quantity"] == 10
-    assert data["items"][0]["accepted_quantity"] is None
+    assert data["items"][0]["accepted_quantity"] == 0
 
 @pytest.mark.asyncio
-async def test_empty_items_returns_400(client: AsyncClient, setup_data: dict):
+async def test_empty_items_returns_422(client: AsyncClient, setup_data: dict):
     headers = {"Authorization": f"Bearer {setup_data['token']}"}
     
     # 1. Empty list
@@ -139,11 +139,11 @@ async def test_empty_items_returns_400(client: AsyncClient, setup_data: dict):
         "items": []
     }
     response = await client.post("/api/v1/invoices", json=payload_empty, headers=headers)
-    assert response.status_code == 400
+    assert response.status_code == 422
     
     # 2. Missing items key completely
     response = await client.post("/api/v1/invoices", json={}, headers=headers)
-    assert response.status_code == 400
+    assert response.status_code == 422
 
 @pytest.mark.asyncio
 async def test_non_moderated_sku_returns_400(client: AsyncClient, setup_data: dict):

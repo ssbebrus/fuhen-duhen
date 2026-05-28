@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import Optional, List
 from uuid import UUID
 from datetime import datetime
@@ -155,10 +155,18 @@ class ProductShortResponse(BaseModel):
     category_id: UUID = Field(..., title="Category Id")
     deleted: bool = Field(..., title="Deleted")
     created_at: datetime = Field(..., title="Created At")
-    min_price: Optional[int] = Field(None, title="Min Price")
-    cover_image: Optional[str] = Field(None, title="Cover Image")
+    min_price: int = Field(default=0, title="Min Price")
+    cover_image: str = Field(default="", title="Cover Image")
     skus_count: int = Field(..., title="Skus Count")
     total_active_quantity: int = Field(..., title="Total Active Quantity")
+
+    @field_validator('min_price', mode='before')
+    def set_min_price(cls, v):
+        return v if v is not None else 0
+
+    @field_validator('cover_image', mode='before')
+    def set_cover_image(cls, v):
+        return v if v is not None else ""
 
     model_config = ConfigDict(from_attributes=True)
 

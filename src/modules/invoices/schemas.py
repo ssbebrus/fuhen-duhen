@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import List, Optional
 from datetime import datetime
 from uuid import UUID
@@ -15,8 +15,12 @@ class InvoiceItemResponse(BaseModel):
     id: UUID
     sku_id: UUID
     quantity: int
-    accepted_quantity: Optional[int]
+    accepted_quantity: int = 0
     sku_name: Optional[str] = None
+
+    @field_validator('accepted_quantity', mode='before')
+    def set_accepted_quantity(cls, v):
+        return v if v is not None else 0
 
     model_config = ConfigDict(from_attributes=True)
 

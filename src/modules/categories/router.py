@@ -9,7 +9,7 @@ from .service import CategoryService
 
 router = APIRouter(prefix="/categories", tags=["Categories"])
 
-@router.get("/", response_model=List[CategoryResponse], summary="Получить все категории")
+@router.get("", response_model=List[CategoryResponse], summary="Получить все категории")
 async def get_categories(db: AsyncSession = Depends(get_db)):
     """Получить все категории"""
     return await CategoryService.get_all(db)
@@ -22,7 +22,7 @@ async def get_categories(db: AsyncSession = Depends(get_db)):
 #         raise HTTPException(status_code=404, detail="Категория не найдена")
 #     return category
 
-@router.post("/", response_model=CategoryResponse, status_code=status.HTTP_201_CREATED, summary="Создать категорию")
+@router.post("", response_model=CategoryResponse, status_code=status.HTTP_201_CREATED, summary="Создать категорию")
 async def create_category(category_in: CategoryCreate, db: AsyncSession = Depends(get_db)):
     """Создать новую категорию"""
     return await CategoryService.create(db, category_in)

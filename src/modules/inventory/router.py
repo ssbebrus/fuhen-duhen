@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends, BackgroundTasks, status
+from fastapi import APIRouter, Depends, BackgroundTasks, status, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db.database import get_db
 from src.modules.products.router import verify_service_key
 from .schemas import ReserveRequest, ReserveResponse, InventoryOrderRequest, InventoryOrderResponse
 from .service import InventoryService
+from .exceptions import NotEnoughReservedQuantityError
 
 router = APIRouter(prefix="/inventory", tags=["Inventory"])
 
@@ -40,7 +41,13 @@ async def unreserve_inventory(
     """
     Снятие резерва при отмене заказа. Идемпотентно по order_id.
     """
-    return await InventoryService.unreserve(db, request)
+    try:
+        return await InventoryService.unreserve(db, request)
+    except NotEnoughReservedQuantityError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "CONFLICT", "message": "Not enough reserved quantity to unreserve"}
+        )
 
 @router.post(
     "/fulfill", 
@@ -56,4 +63,10 @@ async def fulfill_inventory(
     """
     Списание резерва при доставке заказа. Идемпотентно по order_id.
     """
-    return await InventoryService.fulfill(db, request)
+    try:
+        return await InventoryService.fulfill(db, request)
+    except NotEnoughReservedQuantityError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "CONFLICT", "message": "Not enough reserved or physical quantity to fulfill"}
+        )

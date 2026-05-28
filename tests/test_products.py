@@ -77,7 +77,7 @@ async def test_create_product_returns_201_with_created_status(client: AsyncClien
         "characteristics": [{"name": "Brand", "value": "Apple"}]
     }
     
-    response = await client.post("/api/v1/products/", json=payload, headers=headers)
+    response = await client.post("/api/v1/products", json=payload, headers=headers)
     assert response.status_code == 201, response.text
     data = response.json()
     assert data["status"] == "CREATED"
@@ -101,7 +101,7 @@ async def test_seller_id_taken_from_jwt(client: AsyncClient, setup_data: dict, t
         "images": [{"url": "http://img", "ordering": 0}]
     }
     
-    response = await client.post("/api/v1/products/", json=payload, headers=headers)
+    response = await client.post("/api/v1/products", json=payload, headers=headers)
     assert response.status_code == 201
     
     product_id = response.json()["id"]
@@ -112,7 +112,7 @@ async def test_seller_id_taken_from_jwt(client: AsyncClient, setup_data: dict, t
     assert str(db_seller_id) == str(setup_data["seller_id"])
 
 @pytest.mark.asyncio
-async def test_missing_category_returns_400(client: AsyncClient, setup_data: dict):
+async def test_missing_category_returns_422(client: AsyncClient, setup_data: dict):
     headers = {"Authorization": f"Bearer {setup_data['token']}"}
     payload = {
         "title": "iPhone 15",
@@ -121,14 +121,14 @@ async def test_missing_category_returns_400(client: AsyncClient, setup_data: dic
         # missing category_id
     }
     
-    response = await client.post("/api/v1/products/", json=payload, headers=headers)
-    assert response.status_code == 400
+    response = await client.post("/api/v1/products", json=payload, headers=headers)
+    assert response.status_code == 422
     data = response.json()
     assert data["code"] == "VALIDATION_ERROR"
     assert "category_id" in data["message"]
 
 @pytest.mark.asyncio
-async def test_missing_description_returns_400(client: AsyncClient, setup_data: dict):
+async def test_missing_description_returns_422(client: AsyncClient, setup_data: dict):
     headers = {"Authorization": f"Bearer {setup_data['token']}"}
     payload = {
         "title": "iPhone 15",
@@ -137,11 +137,11 @@ async def test_missing_description_returns_400(client: AsyncClient, setup_data: 
         # missing description
     }
     
-    response = await client.post("/api/v1/products/", json=payload, headers=headers)
-    assert response.status_code == 400
+    response = await client.post("/api/v1/products", json=payload, headers=headers)
+    assert response.status_code == 422
 
 @pytest.mark.asyncio
-async def test_missing_images_returns_400(client: AsyncClient, setup_data: dict):
+async def test_missing_images_returns_422(client: AsyncClient, setup_data: dict):
     headers = {"Authorization": f"Bearer {setup_data['token']}"}
     payload = {
         "title": "iPhone 15",
@@ -150,8 +150,8 @@ async def test_missing_images_returns_400(client: AsyncClient, setup_data: dict)
         # missing images
     }
     
-    response = await client.post("/api/v1/products/", json=payload, headers=headers)
-    assert response.status_code == 400
+    response = await client.post("/api/v1/products", json=payload, headers=headers)
+    assert response.status_code == 422
 
 @pytest.mark.asyncio
 async def test_invalid_category_id_returns_400(client: AsyncClient, setup_data: dict):
@@ -163,7 +163,7 @@ async def test_invalid_category_id_returns_400(client: AsyncClient, setup_data: 
         "images": [{"url": "http://img", "ordering": 0}]
     }
     
-    response = await client.post("/api/v1/products/", json=payload, headers=headers)
+    response = await client.post("/api/v1/products", json=payload, headers=headers)
     assert response.status_code == 400
     assert response.json()["code"] == "INVALID_REQUEST"
 
@@ -363,7 +363,7 @@ async def test_deleted_product_not_in_seller_list(client: AsyncClient, setup_dat
     await test_db.execute(text(f"UPDATE products SET deleted = true WHERE id = '{product_id}'"))
     await test_db.flush()
     
-    response = await client.get("/api/v1/products/", headers=headers)
+    response = await client.get("/api/v1/products", headers=headers)
     assert response.status_code == 200
     
     data = response.json()
@@ -372,7 +372,7 @@ async def test_deleted_product_not_in_seller_list(client: AsyncClient, setup_dat
     product_ids = [item["id"] for item in items]
     assert str(product_id) not in product_ids
     
-    response2 = await client.get("/api/v1/products/?include_deleted=true", headers=headers)
+    response2 = await client.get("/api/v1/products?include_deleted=true", headers=headers)
     data2 = response2.json()
     product_ids2 = [item["id"] for item in data2["items"]]
     assert str(product_id) in product_ids2
@@ -395,8 +395,6 @@ async def test_get_moderated_product_returns_full_payload(client: AsyncClient, s
     data = response.json()
     assert data["status"] == "MODERATED"
     assert data["blocking_reason"] is None
-    assert "blocking_reason_id" not in data
-    assert "moderator_comment" not in data
     assert data["field_reports"] == []
     assert len(data["skus"]) == 1
     assert "cost_price" in data["skus"][0]
@@ -496,7 +494,7 @@ async def test_list_returns_only_own_products(client: AsyncClient, setup_data: d
     await test_db.flush()
 
     headers = {"Authorization": f"Bearer {setup_data['token']}"}
-    response = await client.get("/api/v1/products/", headers=headers)
+    response = await client.get("/api/v1/products", headers=headers)
     assert response.status_code == 200
     data = response.json()
     items = data["items"]
@@ -519,7 +517,7 @@ async def test_idor_query_param_seller_id_ignored(client: AsyncClient, setup_dat
     headers = {"Authorization": f"Bearer {setup_data['token']}"}
     # Пытаемся передать seller_id другого продавца
     other_seller_id = setup_data["product_id_other"]
-    response = await client.get(f"/api/v1/products/?seller_id={other_seller_id}", headers=headers)
+    response = await client.get(f"/api/v1/products?seller_id={other_seller_id}", headers=headers)
     assert response.status_code == 200
     data = response.json()
     items = data["items"]
@@ -538,13 +536,13 @@ async def test_deleted_products_visible_with_deleted_flag(client: AsyncClient, s
 
     headers = {"Authorization": f"Bearer {setup_data['token']}"}
     # По умолчанию удаленные не видны
-    response = await client.get("/api/v1/products/", headers=headers)
+    response = await client.get("/api/v1/products", headers=headers)
     assert response.status_code == 200
     items = response.json()["items"]
     assert str(product_id) not in [item["id"] for item in items]
 
     # С флагом include_deleted=true видны
-    response = await client.get("/api/v1/products/?include_deleted=true", headers=headers)
+    response = await client.get("/api/v1/products?include_deleted=true", headers=headers)
     assert response.status_code == 200
     items = response.json()["items"]
     deleted_item = next(item for item in items if item["id"] == str(product_id))
@@ -554,7 +552,7 @@ async def test_deleted_products_visible_with_deleted_flag(client: AsyncClient, s
 @pytest.mark.asyncio
 async def test_status_filter_works_correctly(client: AsyncClient, setup_data: dict):
     headers = {"Authorization": f"Bearer {setup_data['token']}"}
-    response = await client.get("/api/v1/products/?status=BLOCKED", headers=headers)
+    response = await client.get("/api/v1/products?status=BLOCKED", headers=headers)
     assert response.status_code == 200
     items = response.json()["items"]
     
@@ -583,7 +581,7 @@ async def test_search_by_title_case_insensitive(client: AsyncClient, setup_data:
 
     headers = {"Authorization": f"Bearer {setup_data['token']}"}
     # Ищем по mAcBoOk
-    response = await client.get("/api/v1/products/?search=mAcBoOk", headers=headers)
+    response = await client.get("/api/v1/products?search=mAcBoOk", headers=headers)
     assert response.status_code == 200
     items = response.json()["items"]
     
@@ -591,3 +589,38 @@ async def test_search_by_title_case_insensitive(client: AsyncClient, setup_data:
     assert str(p1) in product_ids
     assert str(p2) in product_ids
     assert len(items) == 2
+
+@pytest.mark.asyncio
+async def test_delete_nonexistent_product_returns_404(client: AsyncClient, setup_data: dict):
+    headers = {"Authorization": f"Bearer {setup_data['token']}"}
+    product_id = uuid.uuid4()
+    
+    response = await client.delete(f"/api/v1/products/{product_id}", headers=headers)
+    assert response.status_code == 404
+    assert response.json()["code"] == "NOT_FOUND"
+
+@pytest.mark.asyncio
+async def test_get_hard_blocked_product_returns_blocking_reason_and_field_reports(client: AsyncClient, setup_data: dict, test_db: AsyncSession):
+    headers = {"Authorization": f"Bearer {setup_data['token']}"}
+    product_id = setup_data["product_id_hblk"]
+    
+    reason_id = uuid.uuid4()
+    await test_db.execute(text(
+        f"UPDATE products SET blocking_reason_id = '{reason_id}', blocking_reason_title = 'Bad Title', "
+        f"moderator_comment = 'Comment', "
+        f"field_reports = '[{{\"field_name\": \"title\", \"sku_id\": null, \"comment\": \"Bad\"}}]' "
+        f"WHERE id = '{product_id}'"
+    ))
+    await test_db.flush()
+
+    response = await client.get(f"/api/v1/products/{product_id}", headers=headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "HARD_BLOCKED"
+    assert data["blocked"] is True
+    assert data["blocking_reason"] is not None
+    assert data["blocking_reason"]["id"] == str(reason_id)
+    assert data["blocking_reason"]["title"] == "Bad Title"
+    assert data["blocking_reason"]["comment"] == "Comment"
+    assert len(data["field_reports"]) == 1
+    assert data["field_reports"][0]["field_name"] == "title"

@@ -1,0 +1,2 @@
+class NotEnoughReservedQuantityError(Exception):
+    pass
