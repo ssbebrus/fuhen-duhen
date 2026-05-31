@@ -375,7 +375,7 @@ class ProductService:
                 filtered_products.sort(key=lambda p: p.min_price or float('inf'))
             elif sort == "price_desc":
                 filtered_products.sort(key=lambda p: p.min_price or 0, reverse=True)
-            elif sort in ["created_desc", "date_desc"]:
+            elif sort == "new":
                 filtered_products.sort(key=lambda p: p.created_at, reverse=True)
             else:
                 filtered_products.sort(key=lambda p: p.created_at, reverse=True)
@@ -398,7 +398,7 @@ class ProductService:
                 query = query.order_by(min_price_sub.asc())
             elif sort == "price_desc":
                 query = query.order_by(min_price_sub.desc())
-            elif sort in ["created_desc", "date_desc"]:
+            elif sort == "new":
                 query = query.order_by(Product.created_at.desc())
             else:
                 query = query.order_by(Product.created_at.desc())
