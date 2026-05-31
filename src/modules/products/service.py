@@ -338,10 +338,11 @@ class ProductService:
             conditions.append(Product.category_id == category_id)
 
         if search:
+            escaped_search = search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
             conditions.append(
                 or_(
-                    Product.title.ilike(f"%{search}%"),
-                    Product.description.ilike(f"%{search}%")
+                    Product.title.ilike(f"%{escaped_search}%", escape="\\"),
+                    Product.description.ilike(f"%{escaped_search}%", escape="\\")
                 )
             )
 
