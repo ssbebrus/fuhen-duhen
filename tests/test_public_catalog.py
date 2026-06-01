@@ -247,6 +247,7 @@ async def test_catalog_facets(client: AsyncClient, catalog_setup: dict):
 async def test_catalog_products_with_filter(client: AsyncClient, catalog_setup: dict):
     headers = {"X-Service-Key": settings.B2B_TO_B2C_KEY}
     
+    # Filter products by category and brand
     response = await client.get(f"/api/v1/public/products?category_id={catalog_setup['category_id']}&filters[brend]=Apple", headers=headers)
     assert response.status_code == 200, response.text
     data = response.json()
@@ -254,3 +255,70 @@ async def test_catalog_products_with_filter(client: AsyncClient, catalog_setup: 
     items = data["items"]
     assert len(items) == 1
     assert items[0]["title"] == "P Mod Active"
+
+@pytest.mark.asyncio
+async def test_catalog_similar_products_fallback_to_parent(client: AsyncClient, test_db: AsyncSession):
+    headers = {"X-Service-Key": settings.B2B_TO_B2C_KEY}
+    
+    # 1. Create seller
+    seller_id = uuid.uuid4()
+    await test_db.execute(text(
+        f"INSERT INTO sellers (id, email, hashed_password, first_name, last_name, company_name, created_at, updated_at) "
+        f"VALUES ('{seller_id}', 'seller_fallback@test.com', 'hash', 'Test', 'Seller', 'FallbackInc', now(), now())"
+    ))
+    
+    # 2. Create parent category (level 0)
+    parent_cat_id = uuid.uuid4()
+    await test_db.execute(text(
+        f"INSERT INTO categories (id, name, level, path, is_active, created_at, updated_at) "
+        f"VALUES ('{parent_cat_id}', 'ParentCat', 0, '{parent_cat_id}', true, now(), now())"
+    ))
+    
+    # 3. Create child category (level 1)
+    child_cat_id = uuid.uuid4()
+    await test_db.execute(text(
+        f"INSERT INTO categories (id, name, level, path, is_active, created_at, updated_at) "
+        f"VALUES ('{child_cat_id}', 'ChildCat', 1, '{parent_cat_id}.{child_cat_id}', true, now(), now())"
+    ))
+    
+    # 4. Create products
+    target_pid = uuid.uuid4()
+    child_pid = uuid.uuid4()
+    parent_pid1 = uuid.uuid4()
+    parent_pid2 = uuid.uuid4()
+    parent_pid3 = uuid.uuid4()
+    
+    await test_db.execute(text(
+        f"INSERT INTO products (id, title, slug, description, status, deleted, category_id, seller_id, images, characteristics, created_at, updated_at) VALUES "
+        f"('{target_pid}', 'Target Product', 'target-product', 'Desc', 'MODERATED', false, '{child_cat_id}', '{seller_id}', '[]', '[]', now(), now()), "
+        f"('{child_pid}', 'Child similar', 'child-similar', 'Desc', 'MODERATED', false, '{child_cat_id}', '{seller_id}', '[]', '[]', now(), now()), "
+        f"('{parent_pid1}', 'Parent similar 1', 'parent-similar-1', 'Desc', 'MODERATED', false, '{parent_cat_id}', '{seller_id}', '[]', '[]', now(), now()), "
+        f"('{parent_pid2}', 'Parent similar 2', 'parent-similar-2', 'Desc', 'MODERATED', false, '{parent_cat_id}', '{seller_id}', '[]', '[]', now(), now()), "
+        f"('{parent_pid3}', 'Parent similar 3', 'parent-similar-3', 'Desc', 'MODERATED', false, '{parent_cat_id}', '{seller_id}', '[]', '[]', now(), now())"
+    ))
+    
+    # 5. Create SKUs with active_quantity > 0
+    await test_db.execute(text(
+        f"INSERT INTO skus (id, name, price, cost_price, discount, stock_quantity, active_quantity, reserved_quantity, product_id, images, characteristics, created_at, updated_at) VALUES "
+        f"('{uuid.uuid4()}', 'SKU Target', 1000, 800, 0, 10, 5, 0, '{target_pid}', '[]', '[]', now(), now()), "
+        f"('{uuid.uuid4()}', 'SKU Child', 1000, 800, 0, 10, 5, 0, '{child_pid}', '[]', '[]', now(), now()), "
+        f"('{uuid.uuid4()}', 'SKU Parent 1', 1000, 800, 0, 10, 5, 0, '{parent_pid1}', '[]', '[]', now(), now()), "
+        f"('{uuid.uuid4()}', 'SKU Parent 2', 1000, 800, 0, 10, 5, 0, '{parent_pid2}', '[]', '[]', now(), now()), "
+        f"('{uuid.uuid4()}', 'SKU Parent 3', 1000, 800, 0, 10, 5, 0, '{parent_pid3}', '[]', '[]', now(), now())"
+    ))
+    
+    await test_db.flush()
+    
+    # Check similar products endpoint for target_pid
+    response = await client.get(f"/api/v1/public/products/{target_pid}/similar?limit=5", headers=headers)
+    assert response.status_code == 200, response.text
+    data = response.json()
+    
+    # Should return child_pid and parent_pid1, parent_pid2, parent_pid3
+    returned_ids = [uuid.UUID(item["id"]) for item in data]
+    assert child_pid in returned_ids
+    assert parent_pid1 in returned_ids
+    assert parent_pid2 in returned_ids
+    assert parent_pid3 in returned_ids
+    assert target_pid not in returned_ids
+    assert len(returned_ids) == 4

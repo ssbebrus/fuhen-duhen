@@ -485,10 +485,10 @@ class ProductService:
         return list(result.scalars().all())
 
     @staticmethod
-    async def get_public_similar_products(db: AsyncSession, product_id: UUID, limit: int = 10) -> List[dict]:
+    async def get_public_similar_products(db: AsyncSession, product_id: UUID, limit: int = 10) -> List[Product]:
         """Получить похожие товары для B2C из той же категории"""
         from src.modules.skus.models import SKU
-        from sqlalchemy import exists
+        from sqlalchemy import exists, func
 
         product = await ProductService.get_by_id(db, product_id)
         if not product or product.deleted or product.status != ProductStatus.MODERATED:
@@ -509,34 +509,42 @@ class ProductService:
                 Product.deleted == False,
                 active_sku_exists
             )
+            .order_by(func.random())
             .limit(limit)
         )
         result = await db.execute(query)
-        similar_products = result.scalars().all()
+        similar_products = list(result.scalars().all())
 
-        items = []
-        for p in similar_products:
-            active_prices = [sku.price for sku in p.skus if sku.active_quantity > 0]
-            m_price = min(active_prices) if active_prices else 0
-            
-            cover = None
-            if p.images:
-                sorted_imgs = sorted(p.images, key=lambda x: x.get("ordering", 0))
-                if sorted_imgs:
-                    cover = sorted_imgs[0].get("url")
+        # Get parent_id from category.path
+        parent_id = None
+        if product.category and product.category.path:
+            parts = product.category.path.split(".")
+            if len(parts) > 1:
+                try:
+                    parent_id = uuid.UUID(parts[-2])
+                except ValueError:
+                    pass
 
-            items.append({
-                "id": p.id,
-                "title": p.title,
-                "slug": p.slug or "",
-                "status": p.status,
-                "category_id": p.category_id,
-                "min_price": m_price,
-                "cover_image": cover,
-                "created_at": p.created_at
-            })
+        if len(similar_products) < limit and parent_id:
+            remaining = limit - len(similar_products)
+            excluded_ids = [p.id for p in similar_products] + [product_id]
+            parent_query = (
+                select(Product)
+                .options(selectinload(Product.category), selectinload(Product.skus))
+                .where(
+                    Product.category_id == parent_id,
+                    Product.id.notin_(excluded_ids),
+                    Product.status == ProductStatus.MODERATED,
+                    Product.deleted == False,
+                    active_sku_exists
+                )
+                .order_by(func.random())
+                .limit(remaining)
+            )
+            parent_result = await db.execute(parent_query)
+            similar_products.extend(list(parent_result.scalars().all()))
 
-        return items
+        return similar_products
 
     @staticmethod
     async def process_moderation_event(

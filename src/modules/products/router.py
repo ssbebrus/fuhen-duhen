@@ -309,7 +309,7 @@ async def get_public_product(
         )
     return ProductPublicResponse.model_validate(product)
 
-@public_router.get("/products/{product_id}/similar", response_model=List[ProductPublicShortResponse], summary="Похожие товары")
+@public_router.get("/products/{product_id}/similar", response_model=List[ProductPublicResponse], summary="Похожие товары")
 async def get_public_similar_products(
     product_id: UUID,
     limit: int = 10,
