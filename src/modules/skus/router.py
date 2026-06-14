@@ -158,3 +158,23 @@ async def delete_sku(
     except SkuHasReservesError:
         raise HTTPException(status_code=409, detail={"code": "CONFLICT", "message": "Cannot delete SKU with active reserves"})
     return None
+
+@router.get("/{sku_id}", response_model=SKUResponse, summary="Получить SKU")
+async def get_sku(
+    sku_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    seller: Seller = Depends(get_current_seller)
+):
+    """Получить SKU (seller view)"""
+    from sqlalchemy import select
+    from src.modules.products.models import Product
+    sku = await SKUService.get_by_id(db, sku_id)
+    if not sku:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "SKU not found"})
+        
+    product = await db.scalar(select(Product).where(Product.id == sku.product_id))
+    if not product or product.seller_id != seller.id:
+        raise HTTPException(status_code=403, detail={"code": "NOT_OWNER", "message": "SKU does not belong to the authenticated seller"})
+        
+    return sku
+

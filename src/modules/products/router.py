@@ -25,6 +25,7 @@ from src.modules.auth.dependencies import get_current_seller, get_auth_context, 
 from src.modules.auth.models import Seller
 from src.modules.common.events import send_moderation_event, send_b2c_product_event
 from typing import Union
+from src.modules.skus.schemas import SKUResponse
 
 router = APIRouter(prefix="/products", tags=["Products"])
 
@@ -138,8 +139,25 @@ async def delete_product(
     background_tasks.add_task(send_b2c_product_event, product.id, sku_ids, "PRODUCT_DELETED")
     return None
 
+@router.get("/{product_id}/skus", response_model=List[SKUResponse], tags=["SKUs"], summary="Получить все SKU товара")
+async def get_product_skus(
+    product_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    seller: Seller = Depends(get_current_seller)
+):
+    """Все SKU товара (seller view)"""
+    product = await ProductService.get_by_id(db, product_id)
+    if not product:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Product not found"})
+        
+    if product.seller_id != seller.id:
+        raise HTTPException(status_code=403, detail={"code": "NOT_OWNER", "message": "Product does not belong to the authenticated seller"})
+        
+    return product.skus
+
 @router.post("/{product_id}/images", response_model=ProductImageResponse, status_code=status.HTTP_201_CREATED, summary="Добавить изображение к товару")
 async def add_product_image(
+
     product_id: UUID,
     image_in: ProductImageCreateRequest,
     background_tasks: BackgroundTasks,
@@ -235,6 +253,9 @@ async def list_public_products(
     search: Optional[str] = None,
     sort: Optional[str] = None,
     ids: Optional[str] = None,
+    min_price: Optional[int] = None,
+    max_price: Optional[int] = None,
+    seller_id: Optional[UUID] = None,
     limit: int = 20,
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
@@ -250,7 +271,17 @@ async def list_public_products(
             
     try:
         data = await ProductService.get_public_catalog(
-            db, limit=limit, offset=offset, category_id=category_id, search=search, sort=sort, ids=ids, filters=filters_dict
+            db,
+            limit=limit,
+            offset=offset,
+            category_id=category_id,
+            search=search,
+            sort=sort,
+            ids=ids,
+            min_price=min_price,
+            max_price=max_price,
+            seller_id=seller_id,
+            filters=filters_dict
         )
     except InvalidUUIDError:
         raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": "Invalid UUID in ids filter"})
@@ -309,7 +340,7 @@ async def get_public_product(
         )
     return ProductPublicResponse.model_validate(product)
 
-@public_router.get("/products/{product_id}/similar", response_model=List[ProductPublicResponse], summary="Похожие товары")
+@public_router.get("/products/{product_id}/similar", response_model=List[ProductPublicShortResponse], summary="Похожие товары")
 async def get_public_similar_products(
     product_id: UUID,
     limit: int = 10,

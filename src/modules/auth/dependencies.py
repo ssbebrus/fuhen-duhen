@@ -44,7 +44,7 @@ async def get_current_seller(auth: Optional[HTTPAuthorizationCredentials] = Depe
     res = await db.execute(select(Seller).where(Seller.id == seller_uuid))
     seller = res.scalar_one_or_none()
     
-    if seller is None:
+    if seller is None or seller.deleted:
         raise credentials_exception
     return seller
 
@@ -89,6 +89,35 @@ async def get_current_operator(auth: Optional[HTTPAuthorizationCredentials] = De
         raise credentials_exception
     return operator
 
+async def get_current_admin(auth: Optional[HTTPAuthorizationCredentials] = Depends(security)) -> UUID:
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail={"code": "UNAUTHORIZED", "message": "Could not validate credentials"},
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    forbidden_exception = HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail={"code": "FORBIDDEN", "message": "Only admins are authorized to perform this action"},
+    )
+    if auth is None or not auth.credentials:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"code": "UNAUTHORIZED", "message": "Not authenticated"},
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    token = auth.credentials
+    try:
+        payload = jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
+        admin_id: str = payload.get("sub")
+        role: str = payload.get("role")
+        if admin_id is None:
+            raise credentials_exception
+        if role != "admin":
+            raise forbidden_exception
+        return UUID(admin_id)
+    except (jwt.PyJWTError, ValueError):
+        raise credentials_exception
+
 class AuthContext(BaseModel):
     mode: str  # "seller" or "service"
     seller_id: Optional[UUID] = None
@@ -113,3 +142,4 @@ async def get_auth_context(request: Request, db: AsyncSession = Depends(get_db))
     credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
     seller = await get_current_seller(credentials, db)
     return AuthContext(mode="seller", seller_id=seller.id)
+

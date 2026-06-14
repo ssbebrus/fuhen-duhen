@@ -315,6 +315,9 @@ class ProductService:
         search: Optional[str] = None,
         sort: Optional[str] = None,
         ids: Optional[str] = None,
+        min_price: Optional[int] = None,
+        max_price: Optional[int] = None,
+        seller_id: Optional[UUID] = None,
         filters: Optional[dict] = None
     ) -> dict:
         """Получить список публичных продуктов для B2C с фильтрами видимости"""
@@ -336,6 +339,20 @@ class ProductService:
 
         if category_id:
             conditions.append(Product.category_id == category_id)
+
+        if seller_id:
+            conditions.append(Product.seller_id == seller_id)
+
+        if min_price is not None or max_price is not None:
+            min_price_sub = (
+                select(func.min(SKU.price))
+                .where(SKU.product_id == Product.id, SKU.active_quantity > 0)
+                .scalar_subquery()
+            )
+            if min_price is not None:
+                conditions.append(min_price_sub >= min_price)
+            if max_price is not None:
+                conditions.append(min_price_sub <= max_price)
 
         if search:
             escaped_search = search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
