@@ -28,9 +28,11 @@ async def main():
             first_name="Base",
             last_name="User",
             company_name="Base Company",
-            phone="123456789"
+            phone="123456789",
+            inn="123456789012"
         )
         seller = await AuthService.create_seller(session, seller_in)
+
 
         # 2. Create Operator (operator) via AuthService
         operator_in = OperatorCreate(
